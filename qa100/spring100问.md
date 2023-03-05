@@ -171,11 +171,80 @@ run方法的执行：
 ## 23 springboot 启动web容器（tomcat的原理）
 
 
-## 24 spring 中@Import、@ImportSource的用法
-1. @Import是导入其他配置类或是其他组件的工具: @Configuration(或其他注解如@ComponentScan)标注的config类、ImportBeanDefinitionRegistrar类、ImportSelector的子类，普通的Bean组件
-2. @ImportSource
+## 24 spring 中@Import的用法
+@Import是导入其他配置类或是其他组件的工具: 
+   * 导入普通bean，通过import导入的bean（即使没有使用@Configuration注解标注）在spring中会被认为是一个配置bean，可以在被导入的类中使用@Bean注解
+   * 导入实现了ImportSelector接口的类,会执行 selectImports的方法拿到一组类名，从而加载数组中对应的类到spring容器中
+   * 导入DeferredImportSelector接口的类，与ImportSelector类似，也会去执行相应的方法拿到类名然后加载类到spring容器中
+   * 导入ImportBeanDefinitionRegistrar接口的实现类，执行registerBeanDefinitions方法将自定义的BeanDefinition注入到spring容器中（mybatis就是使用的这种方式实现将mapper接口注入到spring容器中从而实现sql的查询）
+@ImportResource 导入一个xml格式的配置文件
 
 ## 25 spring的Bean的后置处理器
 
 ## 26 spring的BeanFactory的后置处理器
 
+## 27 spring @Value原理 
+通过AutowiredAnnotationBeanPostProcessor 在bean被实例化后立即通过反射进行@Autowired或@Value的属性注入
+
+## 28. @Resource 与@Autowired的区别
+@Resource是jdk带的注解，在spring中是先根据属性名字再根据类型查找bean
+@Autowired是spring提供的注解，是先根据类型、然后在根据名字查找bean
+
+## 29. @Configuration的理解
+默认情况下@Configurtaion在spring中会生成一个代理对象，用来保证直接执行@Bean注解的方法时拿到的bean是单例的
+
+## 30 @Primary 的作用
+在spring加载bean时，如果遇到两个类型相同且bean的名称相同的bean时，会自动忽略掉其中一个,这种情况下不会报错
+```java
+@Service
+public class UserService {}
+
+@Configuration
+@ComponentScan(value = {"com.dxy.data.springtest.service"})
+public class TestConfig {
+
+    @Bean
+    public UserService userService(){
+        return new UserService();
+    }
+//    @Bean
+//    public UserService userService2(){
+//        return new UserService();
+//    }
+}
+```
+但是当两个bean的名称不同而类型不同时，如果没有在某个bean上指定@Primary，则会报错：
+```java
+@Configuration
+@ComponentScan(value = {"com.dxy.data.springtest.service"})
+public class TestConfig {
+
+    @Bean
+    public UserService userService(){
+        return new UserService();
+    }
+    //报错
+    @Bean
+    public UserService userService2(){
+        return new UserService();
+    }
+}
+```
+这时需要指定@Primary修饰其中的一个bean来将其作为首选的bean
+
+## 31.注册一个bean的几种方式
+* @Component及其派生注解
+* @Bean
+* @Import的四种导入方式（普通类型，）
+* @ImportResource导入xml配置文件来创建
+* 使用FactoryBean 通过getObject拿到Bean（默认情况下这个bean并不是spring 启动时进行创建的，可以使用SmartFacoryBean设置isEagerInit = true来初始化时加载）
+* 通过ApplicationContext.registerBean()/register(）方法来注册
+* 通过ApplicationContext.register()注册一个beanDefition
+
+## 32.bean的作用域
+* singleton
+* prototype
+web环境下
+* session 利用session.setAttribute()将bean设置到session中
+* request 利用request.setAttribute()
+* application 利用application.setAttribute()
