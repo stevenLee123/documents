@@ -61,7 +61,7 @@ IoC加载的过程可以从Bean的生命周期的角度来看
 ## 14. spring bean的生命周期
 1. 通过componentScan注解扫描包下的bean（被注解Component标注的类）
 2. 拿到包下的所有的class文件
-3. 使用反射根据条件推断需要使用的类构造器
+3. 使用反射根据条件推断需要使用的类构造器，生成bean的实例
 4. 使用反射对标注了Autowired的属性进行依赖注入(通过beanPostProcessor实现)
 5. 判断类的方法中是否有标注了PostConstruct注解，如果有，利用反射调用标注了PostConstruct的方法（初始化前的方法），或是判断类是否实现了BeanPostProcessor，如果实现了，则调用processor的postProcessBeforeInitialization方法（实际上PostConstruct也是使用BeanPostProcessor实现的）
 6. 判断bean是否实现了InitializingBean接口，如果实现了，就调用afterPropertiesSet()方法进行初始化
@@ -77,11 +77,11 @@ IoC加载的过程可以从Bean的生命周期的角度来看
 3. 三级缓存： singletonFactories，存储被ObjectFactory包装的刚刚进行实例化且还未进行属性注入的bean对象
 解决循环依赖的核心思想：找到能打破循环依赖的点
 
-## 16 spring 整合mybatis的原理（可能与springboot的starter的自动注入原理类似）
-核心思想:将myabtis的配置类、sqlSession、mapper的代理类都放入到spring容器，有spring来管理
+## 16 spring 整合mybatis的原理（与springboot的starter的自动注入原理类似）
+核心思想:将myabtis的配置类、sqlSession、mapper的代理类都放入到spring容器，由spring来管理
 用到的知识： 
 1. FactoryBean，通过FactoryBean对象来包裹mybatis的mapper接口，从而将myatbis的mapper代理对象放入spring中管理
-2. 通过ClasspathBeanDeifintionScanner扫描@MapperScan指定的basePackage中的mapper接口，拿到mapper接口的beanDefinition定义
+2. 通过ClassPathBeanDeifintionScanner扫描@MapperScan指定的basePackage中的mapper接口，拿到mapper接口的beanDefinition定义
 3. @Import: 在spring的一个配置类中引入其他配置类或其他组件的方式，在mybatis中，是通过ImportBeanDefinitionRegistrar引入由FactoryBean包装的mapper接口的beanDefinition
 
 ## 17 spring 的包扫描原理
@@ -110,6 +110,24 @@ IoC加载的过程可以从Bean的生命周期的角度来看
 
 
 ## 19 springboot 启动流程
+
+主要流程如下
+
+0. 启动main方法开始
+
+1. 初始化配置：通过类加载器，（loadFactories）读取classpath下所有的spring.factories配置文件，创建一些初始配置对象；通知监听者应用程序启动开始，创建环境对象environment，用于读取环境配置 如 application.yml
+
+2. 创建应用程序上下文-createApplicationContext，创建 bean工厂对象
+
+3. 刷新上下文（启动核心）
+    * 3.1 配置工厂对象，包括上下文类加载器，对象发布处理器，beanFactoryPostProcessor
+    * 3.2 注册并实例化bean工厂发布处理器，并且调用这些处理器，对包扫描解析(主要是class文件)
+    * 3.3 注册并实例化bean发布处理器 beanPostProcessor
+    * 3.4 初始化一些与上下文有特别关系的bean对象（创建tomcat服务器）
+    * 3.5 实例化所有bean工厂缓存的bean对象（剩下的）
+    * 3.6 发布通知-通知上下文刷新完成（启动tomcat服务器）
+
+4. 通知监听者-启动程序完成，启动tomcat或其他web容器
 
 springboot在spring 的启动流程基础上，增加了前期的准备工作（配置文件解析、环境加载、创建spring上下文ServletWebServerApplicationContext），主要利用事件监听器（观察者模式）进行功能扩展，实现对各个事件的监听，实现启动各个流程之间的解偶
 
@@ -147,11 +165,11 @@ run方法的执行：
 2. @Configuration：配置类，也是容器中的一个组件
 3. @EnableAutoConfiguration： 开启自动配置功能，加载自动配置类
    原理：
-   1. 使用@Import 导入了AutoConfigurationImportSelector实现对spring.factories文件中的EnableAutoConfiguration
+   1. 使用@Import 导入了AutoConfigurationImportSelector实现对spring.factories文件中的EnableAutoConfiguration 的值列表解析
    2. AutoConfigurationImportSelector 是DeferredImportSelector的子类，是一个延迟的importSelector，当没有实现DeferredImportSelector的getImportGroup时，会直接调用DeferredImportSelector子类的selectImport
    3. 如果实现了getImportGroup方法，则会调用getImportGroup返回的group的子类的selectImport
    4. 在调用group的selectImports方法之前，会先调用group的process方法，process方法里会真正的进入spi机制加载自动配置类的逻辑，使用SpringFactoriesLoader的loadFactoryNames拿到所有自动配置类的完整类名列表（实际上读取META_INFO/spring.factories文件是在创建SpringApplication时就已经进行了读取，这里拿到的列表是直接从cache中get到的键为EnableAutoConfiguration的完整类名的list）
-4. @ComponentScan： 扫描包，相当于在spring.xml配置中的<context:component-scan>,扫描指定路径下的class
+4. @ComponentScan： 扫描包，相当于在spring.xml配置中的`<context:component-scan>`,扫描指定路径下的class
     扩展点：
    1. TypeExcludeFilter: springboot对外提供的扩展类，可供我们按照自定义的方式进行排除
    2. AutoConfigurationExcludeFilter：排除所有自动配置类且是自动配置类中的一个自动配置功能
@@ -235,11 +253,11 @@ public class TestConfig {
 ## 31.注册一个bean的几种方式
 * @Component及其派生注解
 * @Bean
-* @Import的四种导入方式（普通类型，）
+* @Import的四种导入方式
 * @ImportResource导入xml配置文件来创建
 * 使用FactoryBean 通过getObject拿到Bean（默认情况下这个bean并不是spring 启动时进行创建的，可以使用SmartFacoryBean设置isEagerInit = true来初始化时加载）
-* 通过ApplicationContext.registerBean()/register(）方法来注册
-* 通过ApplicationContext.register()注册一个beanDefition
+* 通过`ApplicationContext.registerBean()/register(）`方法来注册
+* 通过`ApplicationContext.register()`注册一个beanDefition
 
 ## 32.bean的作用域
 * singleton
