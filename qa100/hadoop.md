@@ -53,3 +53,75 @@ hdfs集群
 > DataNode 数据节点
 yarn集群
 
+## 配置文件
+
+hadoop-env.sh 
+配置java home
+> HDFS_NAMENODE_OPTS   -> NameNode
+> HDFS_DATANODE_OPTS  -> Secondary NameNode
+> HDFS_DATANODE_OPTS -> 
+
+core-site.xml 核心配置文件模块
+```xml
+<configuration>
+    <!--用于设置Hadoop的文件系统，由URI指定-->
+    <property>
+        <name>fs.defaultFS</name>
+        <!--用于指定namenode地址在node1机器上-->
+        <value>hdfs://node1:9000</value>
+    </property>
+    <!--配置Hadoop的临时目录，默认/tem/hadoop-${user.name}-->
+    <property>
+        <name>hadoop.tmp.dir</name>
+        <value>/export/servers/hadoop-2.7.4/tmp</value>
+    </property>
+</configuration>
+
+```
+hdfs-site.xml hdfs文件系统模块
+```xml
+<configuration>
+    <!--指定HDFS的数量-->
+    <property>
+        <name>dfs.replication</name>
+        <value>3</value>
+    </property>
+    <!--secondary namenode 所在主机的IP和端口-->
+    <property>
+        <name>dfs.namenode.secondary.http-address</name>
+        <value>node2:50090</value>
+    </property>
+</configuration>
+```
+mapred-site.xml mr模块配置文件
+```xml
+<configuration>
+    <!--指定MapReduce运行时的框架，这里指定在YARN上，默认在local-->
+    <property>
+        <name>mapreduce.framework.name</name>
+        <value>yarn</value>
+    </property>
+</configuration>
+```
+yarn-site.xml yarn模块配置文件
+```xml
+<configuration>
+    <!--指定YARN集群的管理者（ResourceManager）的地址-->
+    <property>
+        <name>yarn.resourcemanager.hostname</name>
+        <value>hadoop01</value>
+    </property>
+    <property>
+        <name>yarn.nodemanager.aux-services</name>
+        <value>mapreduce_shuffle</value>
+    </property>
+</configuration>
+```
+
+workers 集群worker的配置
+```
+node1
+node2
+node3
+```
+
