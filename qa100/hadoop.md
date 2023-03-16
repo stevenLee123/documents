@@ -53,6 +53,13 @@ hdfs集群
 > DataNode 数据节点
 yarn集群
 
+## 集群环境搭建
+3台机器 
+1. 配置静态网络（使用nat桥接模式）
+2. 配置主机名称并写入/etc/hosts
+           node1      node2       node3
+hostname   node1      node2       node3
+
 ## 配置文件
 
 hadoop-env.sh 
@@ -124,4 +131,6 @@ node1
 node2
 node3
 ```
+
+
 
