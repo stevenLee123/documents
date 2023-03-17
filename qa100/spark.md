@@ -28,6 +28,7 @@ spark不做数据存储，做海量的数据分析，提供从hdfs、hive、mysq
 
 ## sparkcore核心RDD
 Resilient Distributed Dataset --弹性分布式数据集
+是一种对数据集形态的抽象，基于此抽象，使用者可以在集群中执行一系列计算，而不用将中间结果落盘。而这正是之前 MR 抽象的一个重要痛点，每一个步骤都需要落盘，使得不必要的开销很高
 ## spark sql
 
 ## spark 离线分析
