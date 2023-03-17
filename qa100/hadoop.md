@@ -308,7 +308,7 @@ pipeline管道传输过程中反方向进行ACK校验，确保数据安全
 
 ## mapreduce （目前基本上不会直接使用mr）
 **分而治之**
-将复杂问题按照一定的方法进行分解成几个子问题，并行处理，然后再进行合并
+将复杂问题按照一定的方法分解成几个子问题，并行处理，然后再进行合并
 
 两个阶段
 > map 拆分问题，并行处理子任务
@@ -344,9 +344,98 @@ mr任务的提交
 ```shell
 hadoop jar hadoop-mapreduce-examples-3.3.4.jar wordCount wordCount.txt
 ```
-input 数据读取
-splitting：对数据进行拆分
-mapping：统计拆分的文件中的各个词的数量
-shuffling： 分组，将各个词的统计分别放在一起
-reducing：将单词统计的所有数据进行累加
-输出结果都是 kv形式
+> input 数据读取
+> splitting：对数据进行拆分，输出格式 `<word,1>`
+> mapping：统计拆分的文件中的各个词的数量
+> shuffling： 分组，排序，将各个词的统计分别放在一起
+> reducing：将单词统计的所有数据进行累加
+> final result 输出结果都是聚合之后的 kv形式
+
+**map阶段执行**
+> 1. 逻辑切片，将数据切片规划，默认split size = block size 128M，每个切片由MapTask处理
+> 2. 按行读取数据 ，将切换中的数据按照一定的规则读取解析返回`<k,v>`，key是每一行的其实位置偏移量，value是本行的文本内容
+> 3. 调用Mapper类中的map方法处理数据，每读取解析出来一个`<k,v>`,调用一次map方法
+> 4. 按照一定的规则对map输出的键值对进行分区partition，默认不分区，因为只有一个reduceTask，分区的数据量就是reduceTask运行的数量
+> 5. map输出数据写入内存缓冲区，达到比例溢出（spill）到磁盘上，spill时根据key进行排序sort，默认根据key字段顺序排序
+> 6. 对所有移除文件进行最终的merge合并，成为一个文件，一个MapTask只会输出一个文件
+
+**reduce阶段执行**
+> 1. ReduceTask 主动从MapTask复制拉取数据自己要处理的数据
+> 2. 把拉取来的数据全部进行合并merge，把分散的数据合并成一个大数据，再对合并的数据排序
+> 3. 对排序后的键值对调用reduce方法，键相等的键值进行合并
+
+**shuffle机制**
+shuffle类似洗牌的相反过程，将map端的无规则输出按指定的规则进行排序，以便reduce端接收处理
+*map端shuffle*
+> collect阶段，将MapTask的结果收集输出到默认大小为100M的环形缓冲区，保存之前会对key进行分区计算，默认hash分区
+> spill阶段：当内存中的数据量达到一定的阈值时，将数据溢出（spill）写入本地磁盘，在数据写入磁盘之前会进行一次排序操作，如果配置了combiner，还会将由相同分区号和key的数据进行排序
+> merge阶段：把所有移除的临时文件进行一次合并操作，以确保一个maptask最终只产生一个中间数据文件
+
+*reduce端shuffle*
+> copu阶段： reduceTask启动Fetcher线程到已完成的MapTask的节点上复制一份属于自己的数据
+> Merge阶段：在ReduceTask远程复制数据的同时，会在后台开启两个线程对内存到本地的数据文件进行合并操作
+> Sort阶段： 在对数据进行合并的同时，会整体进行排序操作，在MapTask阶段已经对数据进行了局部的排序，ReduceTask只需要保证Copy的数据最终整体有效性即可
+
+
+shuffle机制的弊端：
+shuffle频繁设计到数据在内存、磁盘之间多次往复，导致mapreduce过程很慢
+
+## yarn （yet another resource negotiator） 
+**yarn是通用的资源管理系统和调度平台，可为上层应用提供同一个的资源管理和调度**
+资源管理系统： 集群的硬件资源，和程序运行关系， 比如内存、cpu
+调度平台：支持多个程序同时申请计算资源如何分配，调度的规则算法设置
+通用：不仅支持mr，支持各种其他的各种程序，如spark、flink
+
+**yarn架构**
+集群物理层面划分
+> ResourceManager 资源管理者，决定系统中所有应用程序之间资源分配的最终权限，最终仲裁者
+> NodeManager 从角色，一台机器上一个，负责本台机器上的计算资源，根据RM的命令，启动Container容器，监视容器资源使用情况，并像主角色汇报
+应用程序层面
+> ApplicationMaster ，应用程序的老大，负责程序各个阶段资源申请，监督程序的执行情况
+> client 客户端
+> Container 容器，硬件资源抽象
+
+**yarn程序提交的流程（以mapreduce为例）**
+第一阶段客户端申请资源启动运行本次程序的ApplicationMaster
+第二阶段ApplicationMaster根据本次程序内部具体情况，为它申请资源，并监视他的整个运行过程
+
+1. MR作业提交 client -> ResourceManager  
+2. 资源的申请 ApplicationMaster ->ResourceManager 
+3. MR作业状态汇报 container(map|reduce task) -> 
+4. 节点状态汇报 NodeManage -> ResourceManager  
+
+
+> 客户端向yarn 的ResourceManager提交应用程序
+> ResourceManager 为应用程序分配第一个Container，并于对应的NodeManager通行，要求它在这个Container中启动这个应用程序的ApplicationMaster
+> container(ApplicationMaster) ApplicationMaster启动成功后，向ResourceManager注册并保持通信，用户可以通过ResourceManager查看程序运行状态
+> ApplicationMaster 为本次程序内部的各个Task任务向ResourceManager申请资源，并监控它的运行状态 （使用yarn的scheduler组件进行申请）
+> 一旦Application Master申请到资源后，与对应的NodeManager通信要求其启动任务
+> NodeManager为任务设置好运行环境之后，将任务启动命令写入到一个脚本中，并通过运行该脚本之行任务
+> 任务通过rpc向ApplicationMaster汇报自己的状态和进度
+> 运行程序完成后，ApplicationMaster向ResourceManager注销并关闭自己
+
+**yarn的资源调度器Scheduler**
+调度没有最佳策略，要根据实际应用场景使用
+三种调度策略
+* FIFO scheduler
+  先进先出，先提交应用先运行
+  拥有控制全局的queue
+  不适合共享集群，不需要配置
+* Capacity scheduler
+  容量调度
+  允许多个组织共享整个集群资源  
+  每个组织可以获得集群的一部分计算能力，通过为每个组织分配专门的队列，然后再为每个队列分配一定的集群资源
+  层次话的队列设计
+  容量保证
+  安全
+  弹性分配
+* fair Scheduler
+    公平调度策略
+    动态调整资源，按作业来进行分配资源
+    保证最小配额
+    允许资源共享
+    默认不限制每个队列和用户可以同时运行应用的数量
+
+## 数据仓库
+> 用于存储分析，报告的数据系统
+> 面相分析的集成化数据环境
