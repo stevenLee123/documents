@@ -104,5 +104,71 @@ redis.conf:
 项目名：业务名：业务类型：id
 
 
+## redis集群安装
+三种模式
+> 主从模式
+> 哨兵模式
+> 集群模式
+
+单节点安装
+```shell
+yum -y install gcc
+make distclean
+make && make install PREFIX=/export/server/redis
+```
+
+**主从模式**
+启动主从复制模式后，从服务器只提供给读的功能，不提供写共功能
+主服务提供读写功能
+修改配置从服务器配置文件
+```
+sloveof 192.168.10.102 6379 
+masterauth steven  #主服务器密码
+requeirepass steven #主服务器密码
+```
+主服务宕机后从服务器不会提升成为主服务器，导致整个系统数据不可写入
+
+
+**哨兵模式**
+哨兵模式是一种特殊的模式，首先Redis提供了哨兵的命令，哨兵是一个独立的进程，作为进程，它会独立运行。其原理是哨兵通过发送命令，等待Redis服务器响应，从而监控运行的多个Redis实例。
+哨兵的作用
+* 通过发送命令，让Redis服务器返回监控其运行状态，包括主服务器和从服务器。
+* 当哨兵监测到master宕机，会自动将slave切换成master，然后通过发布订阅模式通知其他的从服务器，修改配置文件，让它们切换主机。
+
+
+> redis.conf 从服务器配置
+``` 
+sloveof 192.168.10.102 6379 
+masterauth steven
+requeirepass steven
+```
+> sentinel.conf 配置 
+```
+sentinel monitor mymaster 192.168.10.102 6379 2
+sentinel auth-pass mymaster steven
+```
+> 先启动 redis-server，再启动redis-sentinel
+```
+./bin/redis-server redis.conf
+./bin/redis-sentinel sentinel.conf
+```
+启动后可以通过redis log查看数据同步信息
+也可以通过主从服务上运行下面的命令查看主从信息
+```
+info replication
+```
+关闭主服务器进程，这是会重新选举新的主服务。
+如果主服务器重新上线，此时并不会重新进行主服务器的选举。
+此时观察redis.conf文件，发现文件内的slaveof 主从配置被修改掉（主服务器被配置了一个slaveof属性）
+
+**集群模式**
+
+依据 Redis Cluster 内部故障转移实现原理，Redis 集群至少需要 3 个主节点，而每个主节点至少有 1 从节点，因此搭建一个集群至少包含 6 个节点，三主三从，并且分别部署在不同机器上。
+这里采用在三台centos7虚拟机上使用不同的端口号进行部署
+每台机器部署两个redis进程，
+
+参考地址：https://zhuanlan.zhihu.com/p/320510950
+
+
 
 

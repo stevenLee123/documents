@@ -465,6 +465,144 @@ hive是建立在hadoop上的开源数据仓库系统
 和hadoop的关系
 利用hdfs存储数据，利用mapreduce分析查询数据
 
-## hive的思想
-> 映射信息记录
-> 
+### hive的思想
+> 映射信息记录 --写的sql是针对表，不是针对文件，规定文件和表的对应关系（保存数据的元数据信息，通过元数据信息查找表与hdfs文件的对应关系）
+> SQL语法解析、编译
+> 解析sql后并拿到表与文件映射信息后，转换成mapreduce任务执行拿到结果
+
+### hive的组件
+* 用户接口 jdbc、odbc webGUI、CLI（shell命令行）
+* 元数据存储 hive中的元数据包括表的名字，表的列和分区及其属性，表的属性，表的数据所在的目录 （文件数据存储在hdfs上）
+* driver驱动程序 包括语法解析器，计划编译器，优化器，执行器
+* 执行引擎 hive本身不处理数据，由执行引擎处理，当前支持mapreduce，tez，spark3 
+
+### hive安装
+元数据 metadata：描述数据的数据，描述数据的属性信息，如存储位置，历史数据，大小等，元数据存储在关系型数据库中，如hive内置的derby，或第三方mysql
+元数据服务 metastore：允许多个客户端同时连接，客户端不需要知道mysql数据库的用户名和密码。只需要连接metastore服务即可，保证元数据的安全
+
+安装模式： 内嵌模式，本地模式，远程模式 ---*使用远程模式部署*
+metastore是否需要单独配置，单独启动   ---*单独启动*
+metastore是使用内置derby，还是使用mysql  ---*使用mysql*
+
+安装MySQL数据库 centos7上的安装
+卸载mariadb
+```shell
+rpm -qa|grep mariadb
+rpm -e --nodeps mariadb-libs-5.5.60-1.el7_5.x86_64
+rpm -e --nodeps mariadb-libs-5.5.60-1.el7_5.x86_64
+```
+依赖安装包
+yum -y install libaio
+参考地址：
+https://blog.csdn.net/Darlight/article/details/107787178
+
+安装hive
+修改配置文件：
+hive-en.sh
+```shell
+export HADOOP_HOME=/export/server/hadoop-3.3.4
+export HIVE_CONF_DIR=/export/server/apache-hive-4.0.0-alpha-2-bin/apache-hive-4.0.0-alpha-2-bin/conf
+export HIVE_AUX_JARS_PATH=/export/server/apache-hive-4.0.0-alpha-2-bin/apache-hive-4.0.0-alpha-2-bin/lib
+```
+hive-site.xml
+```xml
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+<!--连接数据的用户名-->
+  <property>
+      <name>javax.jdo.option.ConnectionUserName</name>
+      <value>steven</value>
+  </property>
+<!--连接数据的密码-->
+  <property>
+      <name>javax.jdo.option.ConnectionPassword</name>
+      <value>steven</value>
+  </property>
+<!--mysql数据库的访问路径，没有路径则自动创建-->
+  <property>
+      <name>javax.jdo.option.ConnectionURL</name>
+      <value>jdbc:mysql://node1:3306/hive?createDatabaseIfNotExist=true&amp;characterEncoding=utf8&amp;serverTimezone=UTC&amp;useSSL=&amp;allowPublicKeyRetrieval=true</value>
+  </property>
+<!--连接数据库的驱动-->
+  <property>
+      <name>javax.jdo.option.ConnectionDriverName</name>
+      <value>com.mysql.cj.jdbc.Driver</value>
+  </property>
+<!--元数据是否校验-->
+  <property>
+      <name>hive.metastore.schema.verification</name>
+      <value>false</value>
+  </property>
+<!--是否自动创建核心文件-->
+  <property>
+    <name>datanucleus.schema.autoCreateAll</name>
+    <value>true</value>
+  </property>
+<!--thrift服务器绑定的主机-->
+  <property>
+    <name>hive.server2.thrift.bind.host</name>
+    <value>node1</value>
+  </property>
+
+<!--默认的存储地址-->
+ <property>
+  <name>hive.metastore.warehouse.dir</name>
+  <value>hdfs://node1:9000/user/hive/warehouse</value>
+  <description>location of default database for the warehouse</description>
+</property>
+<!--设置显示表头字段名-->
+ <property>
+   <name>hive.cli.print.header</name>
+   <value>true</value>
+ </property> 
+ <property>
+   <name>hive.cli.print.current.db</name>
+   <value>true</value>
+ </property>
+ <!--远程模式部署metastore metasotre地址-->
+  <property>
+   <name>hive.metastore.uris</name>
+   <value>thrift://node1:9083</value>
+ </property>
+ <!--关闭元数据存储授权-->
+  <property>
+   <name>hive.metastore.event.db.notification.api.auth</name>
+   <value>false</value>
+ </property>
+
+
+</configuration>
+```
+启动hive
+前台启动
+```./bin/hive --service metastore ```
+后台启动
+``` 
+    nohup ./bin/hive --service metastore > metastore.log 2>&1 &       #先启metastore
+    nohup ./bin/hive --service hiveserver2  > hiveserver2.log 2>&1 &  #再启动hiveserver2
+```
+
+客户端使用
+使用beeline客户端访问hive
+```shell
+$ ./bin/beeline --启动客户端
+beeline> ! connect jdbc:hive2://node1:10000  --连接
+#执行Hql
+beeline> create database user; 创建库
+```
+
+第三方可视化客户端
+datagrip dbeaver
+
+### hql语法
+DDL语法
+
+### hive授权
+hive中访问三种权限配置：
+* Metastore Server 中基于存储的授权
+* HiveServer2 中基于 SQL 标准的授权
+* 使用 Apache Ranger 和 Sentry 的授权
+
+
+
