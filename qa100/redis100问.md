@@ -152,70 +152,7 @@ redis.conf:
 
 
 
-## redis集群安装
-三种模式
-> 主从模式
-> 哨兵模式
-> 集群模式
 
-单节点安装
-```shell
-yum -y install gcc
-make distclean
-make && make install PREFIX=/export/server/redis
-```
-
-**主从模式**
-启动主从复制模式后，从服务器只提供给读的功能，不提供写共功能
-主服务提供读写功能
-修改配置从服务器配置文件
-```
-sloveof 192.168.10.102 6379 
-masterauth steven  #主服务器密码
-requeirepass steven #主服务器密码
-```
-主服务宕机后从服务器不会提升成为主服务器，导致整个系统数据不可写入
-
-
-**哨兵模式**
-哨兵模式是一种特殊的模式，首先Redis提供了哨兵的命令，哨兵是一个独立的进程，作为进程，它会独立运行。其原理是哨兵通过发送命令，等待Redis服务器响应，从而监控运行的多个Redis实例。
-哨兵的作用
-* 通过发送命令，让Redis服务器返回监控其运行状态，包括主服务器和从服务器。
-* 当哨兵监测到master宕机，会自动将slave切换成master，然后通过发布订阅模式通知其他的从服务器，修改配置文件，让它们切换主机。
-
-
-> redis.conf 从服务器配置
-``` 
-sloveof 192.168.10.102 6379 
-masterauth steven
-requeirepass steven
-```
-> sentinel.conf 配置 
-```
-sentinel monitor mymaster 192.168.10.102 6379 2
-sentinel auth-pass mymaster steven
-```
-> 先启动 redis-server，再启动redis-sentinel
-```
-./bin/redis-server redis.conf
-./bin/redis-sentinel sentinel.conf
-```
-启动后可以通过redis log查看数据同步信息
-也可以通过主从服务上运行下面的命令查看主从信息
-```
-info replication
-```
-关闭主服务器进程，这是会重新选举新的主服务。
-如果主服务器重新上线，此时并不会重新进行主服务器的选举。
-此时观察redis.conf文件，发现文件内的slaveof 主从配置被修改掉（主服务器被配置了一个slaveof属性）
-
-**集群模式**
-
-依据 Redis Cluster 内部故障转移实现原理，Redis 集群至少需要 3 个主节点，而每个主节点至少有 1 从节点，因此搭建一个集群至少包含 6 个节点，三主三从，并且分别部署在不同机器上。
-这里采用在三台centos7虚拟机上使用不同的端口号进行部署
-每台机器部署两个redis进程，
-
-参考地址：https://zhuanlan.zhihu.com/p/320510950
 
 ## java客户端
 
@@ -360,7 +297,163 @@ RedisTemplate 接收的参数是对象，而不是字符串，默认使用的是
 * 存储能力上限问题   --利用插槽 slot实现动态扩容
 
 ### redis的持久化
-**RDB redis database backup file**
+#### RDB redis database backup file 对整个内存做快照
 使用数据快照方式存储在磁盘文件
 使用save命令执行备份操作  -- save命令会阻塞所有的命令，不推荐，在redis停机时使用
 使用bgsave ，开启额外的进行执行rdb，避免主进程受到影响
+
+**rdb 的触发机制**
+ ```
+ # 900秒内有一次修改则触发一次bgsave
+save 900 1 
+# 300秒内有10次修改则触发一次bgsave
+save 300 10
+# 60秒内10000次修改则触发一次bgsave
+seve 60 10000 
+是否开启redis持久化的压缩
+rdbcompression yes
+dir /data
+dbfilename dump.rdb
+ ```
+ 
+ **rdb实现原理**
+ bgsave 开始时会fork主进程得到子进程，子进程共享主进程的内存数据，完成fork后读取内存数据并写入rdb文件
+ > fork 采用copy-on-write技术
+ > 当主进程执行读操作时，访问共享内存
+ > 当主进程执行写操作时，则会拷贝一份数据，执行写操作
+bgsave基本流程：
+* fork主进程得到一个子进程，共享内存空间
+* 子进程读取内存数据并写入新的rdb文件
+* 用新rdb文件替换旧rdb文件
+
+rdb的缺点
+持久化的间隔时间内如果出现宕机则会出现写入数据丢失的风险
+fork子进程、压缩、写出rdb文件都比较耗时
+
+#### AOF（append only file）追加文件
+redis处理的每个写命令都会记录再AOF文件，可以看作时命令日志文件
+AOF默认关闭
+
+开启：
+```
+#开启aof功能
+appendonly yes
+
+#aof文件名称
+appendfilename 'appendonly.aof'
+
+# 记录名利给频率
+appendfsync always  每执行一次命令就进行写入
+appendfsync everysec  写命令执行完毕先放入aof缓冲区，然后每隔一秒将缓冲区数据写入到aof文件（默认方案，最多丢失1秒内的数据）
+appendfsync no 写命令执行完放入aof缓冲区，由操作系统决定何时将缓冲区内容写入到aof文件中
+```
+> aof 记录的时写命令，当redis重启从aof文件读取数据时，会重新执行命令，重新执行的命令会再次写入aof文件进行记录，这样会导致aof文件过大
+> 为了解决aof文件过的问题，可以执行bgrewriteaof命令，让aof执行重写命令
+可以通过配置文件让bgrewriteaof命令自动执行
+```shell
+# aof 文件大小翻倍（100%）触发一次bgrewriteaof
+auto-aof-rewrite-percentage 100
+# aof 文件体积大小大于64MB触发一次 bgrewriteaof
+auto-aof-rewrite-min-size 64mb
+
+no-appendfsync-on-rewrite no
+#no-appendfsync-on-rewrite会影响Redis事务的持久性。因为在服务器停止对AOF文件的同步期间，事务结果可能会因为停机而丢失。因此，如果服务器打开了no-appendfsync-on-rewrite选项，那么即使服务器运行在always模式的AOF持久化之下，事务也不具有持久性。
+#在默认配置下，no-appendfsync-on-rewrite处于关闭状态。
+```
+**对比**
+redis优先以aof做恢复数据的方式
+rdb的恢复速度快，aof慢
+在实际使用中可以同时使用rdb和aof来进行数据的安全备份
+如果要求数据安全性高，则选择aof，如果要求更快的启动速度，则可以使用rdb
+
+## redis集群安装
+由于redis的使用场景都是读多写少的场景，redis集群一般采取主从结构，读写分离
+三种模式
+> 主从模式
+> 哨兵模式
+> 集群模式
+
+单节点安装
+```shell
+yum -y install gcc
+make distclean
+make && make install PREFIX=/export/server/redis
+```
+
+**主从模式**
+启动主从复制模式后，从服务器只提供给读的功能，不提供写共功能
+主服务提供读写功能
+修改配置从服务器配置文件 (可以临时在从节点使用`replicaof 192.168.10.101 6379`命令来指定主节点)
+```
+# 5.0之前使用slaveof
+sloveof 192.168.10.102 6379 
+#或使用下面的命令
+replicaof 192.168.10.101 6379
+masterauth steven  #主服务器密码
+requeirepass steven #主服务器密码
+```
+指定redis服务器 ip(当服务器存在多个ip时)
+```
+ replica-announce-ip 5.5.5.5
+```
+主服务宕机后从服务器不会提升成为主服务器，导致整个系统数据不可写入
+
+*数据同步原理*
+* 主从第一次同步是全量同步 （全量同步需要读取磁盘文件，效率会较低）
+    > 第一次同步时，主服务器执行basave，发送rdb文件到从节点，主节点继续执行写操作
+    > 在rdb期间收到的所有的命令放入repl_baklog的缓冲区中，
+    > rdb发送完成之后，主节点将缓冲区中的命令发送给从节点,
+* 随后只要主节点有数据写入，则会从repl_baklog缓冲区发送给从节点。
+* master根据replication id(master判断是否与replication id与自己的id一致，不一致则认为是从节点)和offset来判断slave的数据是否需要更新   
+
+* 当slave重启后会与master进行增量同步
+* master根据replication id和offset从repl_baklog（环形缓冲区）缓冲区拿到需要同步的数据，发送给重启的slave
+* 当repl_baklog出现了尚未同步的数据被重新覆盖了，则slave无法从repl_baklo根据offset进行增量同步，这是需要进行全量同步
+
+主从优化：
+* 在master中开启 `repl-diskless-sync yes` 避免磁盘io的读写，将数据写入到网络中
+* redis单节点上的内存占用不用太大，减少rdb导致的过多的磁盘io
+* 提高repl_baklog的大小，发现slave宕机时尽快实现故障恢复，避免全量同步
+* 可以限制一个master上的从节点数量，可以采取主从从的链式结构减少master的压力
+
+
+**哨兵模式**
+哨兵模式是一种特殊的模式，首先Redis提供了哨兵的命令，哨兵是一个独立的进程，作为进程，它会独立运行。其原理是哨兵通过发送命令，等待Redis服务器响应，从而监控运行的多个Redis实例。
+哨兵的作用
+* 通过发送命令，让Redis服务器返回监控其运行状态，包括主服务器和从服务器。
+* 当哨兵监测到master宕机，会自动将slave切换成master，然后通过发布订阅模式通知其他的从服务器，修改配置文件，让它们切换主机。
+
+
+> redis.conf 从服务器配置
+``` 
+sloveof 192.168.10.102 6379 
+masterauth steven
+requeirepass steven
+```
+> sentinel.conf 配置 
+```
+sentinel monitor mymaster 192.168.10.102 6379 2
+sentinel auth-pass mymaster steven
+```
+> 先启动 redis-server，再启动redis-sentinel
+```
+./bin/redis-server redis.conf
+./bin/redis-sentinel sentinel.conf
+```
+启动后可以通过redis log查看数据同步信息
+也可以通过主从服务上运行下面的命令查看主从信息
+```
+info replication
+```
+关闭主服务器进程，这是会重新选举新的主服务。
+如果主服务器重新上线，此时并不会重新进行主服务器的选举。
+此时观察redis.conf文件，发现文件内的slaveof 主从配置被修改掉（主服务器被配置了一个slaveof属性）
+
+**集群模式**
+
+依据 Redis Cluster 内部故障转移实现原理，Redis 集群至少需要 3 个主节点，而每个主节点至少有 1 从节点，因此搭建一个集群至少包含 6 个节点，三主三从，并且分别部署在不同机器上。
+这里采用在三台centos7虚拟机上使用不同的端口号进行部署
+每台机器部署两个redis进程，
+
+参考地址：https://zhuanlan.zhihu.com/p/320510950
+
