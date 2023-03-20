@@ -431,9 +431,18 @@ requeirepass steven #主服务器密码
 **哨兵模式**
 哨兵模式是一种特殊的模式，首先Redis提供了哨兵的命令，哨兵是一个独立的进程，作为进程，它会独立运行。其原理是哨兵通过发送命令，等待Redis服务器响应，从而监控运行的多个Redis实例。
 哨兵的作用
-* 通过发送命令，让Redis服务器返回监控其运行状态，包括主服务器和从服务器。
-* 当哨兵监测到master宕机，会自动将slave切换成master，然后通过发布订阅模式通知其他的从服务器，修改配置文件，让它们切换主机。
-
+* 服务状态监控：通过发送命令，让Redis服务器返回监控其运行状态，包括主服务器和从服务器。
+    > 当超过指定数量（quorum）的sentinel认为实例下线了，则认为该实例在集群中下线
+* 选举新master并故障转移：当哨兵监测到master宕机，会自动将slave切换成master，然后通过发布订阅模式通知其他的从服务器，修改配置文件，让它们切换主机。
+    > 判断slave节点与master节点断开时间长短，如果超过指定的值，则排除该slave节点
+    > 然后判断其他slave节点的slave-priority值，越小优先级越高，如果是0，则永不参加选举
+    > 若slave—prioprity值一样，判断slave节点的offset值，值越大说明数据越新，被选为master优先级越高
+    > 最后判断slave的运行id大小，越小优先级越高
+    故障转移：
+    > sentinel给备选节点发送slaveof no one命令，让节点成为master
+    > sentinuel 给其他slave发送slaveof 192.168.10.101 6379 命令，让slave成为新master的从节点，开始从新的master上同步数据。
+    > 最后修改下线的master的redis.conf，将其设置为新节点的slave
+* sentinel充当redis客户端的服务发现来源，当集群发生故障转移时，将最新的消息推送给redis客户端（主节点发生切换时，通知客户端切换写数据的主节点）
 
 > redis.conf 从服务器配置
 ``` 
@@ -442,7 +451,10 @@ masterauth steven
 requeirepass steven
 ```
 > sentinel.conf 配置 
-```
+```shell
+# mymaster主节点名称
+# 192.168.10.102 6379 主节点ip及端口号
+# 选举master时的quorum值，多少个sentinel认为master下线才在集群中被认定为下线
 sentinel monitor mymaster 192.168.10.102 6379 2
 sentinel auth-pass mymaster steven
 ```
