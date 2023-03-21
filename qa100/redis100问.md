@@ -15,8 +15,9 @@
 
 如果是通过源码安装的redis，则可以通过redis的客户端程序redis-cli的shutdown命令来重启redis
 1.redis关闭
-redis-cli -h 127.0.0.1 -p 6379 
-shutdown
+```
+redis-cli -p 6379 shutdwon
+```
 
 ## redis 配置文件
 redis.conf:
@@ -382,7 +383,7 @@ rdb的恢复速度快，aof慢
 三种模式
 > 主从模式
 > 哨兵模式
-> 集群模式
+> 分片集群模式
 
 单节点安装
 ```shell
@@ -556,7 +557,7 @@ redis数据不与节点绑定，而是与插槽绑定，redis根据key的有效�
 * key中不包含{}，整个key都是有效部分，
 * redis利用crc16算法计算有效部分得到一个hash值，然后对16384取余，得到的结果就是slot值
 
-* 同一类数据可以使用‘{}’包含相同的有效部分，计算插槽时能同类数据放入相同的插槽内
+* 同一类数据可以使用‘{}’包含相同的key的有效部分，计算插槽时能同类数据放入相同的插槽内
 
 **集群伸缩**
 ```shell
@@ -599,7 +600,7 @@ M: 5f7f1e87e3dc35e4b0ca535991e358e666af1c52 192.168.10.102:6379
 >>> Send FUNCTION RESTORE to 192.168.10.101:6390
 >>> Send CLUSTER MEET to node 192.168.10.101:6390 to make it join the cluster.
 [OK] New node added correctly.
-#加入的节点默认没有插槽
+#加入的节点默认没有插槽，需要手动分配插槽
 ## slot插槽移动
 #指定集群内的一个ip和端口进入reshard
 ./bin/redis-cli --cluster reshard 192.168.10.101:6379
@@ -654,9 +655,224 @@ Ready to move 2000 slots.
 ```
 
 **故障转移**
-分片集群模式下依然支持自动故障转移
+分片集群模式下依然支持自动故障转移,当集群内的主节点出现故障宕机时会自动切换故障主节点到其他slave节点
 
 手动故障转移
 利用cluster failover命令手动让集群中的某个master宕机，切换到执行cluster failover命令的这个slave节点，实现无感知的数据迁移
+* cluster failover 缺省情况下会检查数据的一致性，并保证当前执行的slave节点的数据与要切换为slave的master节点数据一致，随后会将当前slave升级为master，原来的master变成slave
 
+**redisTemplate中使用分片**
+配置
+```yaml
+spring:
+  redis:
+    database: 0
+    password: steven
+#    sentinel:
+#      master: mymaster
+#      nodes:
+#        - 192.168.10.101:26379
+#        - 192.168.10.102:26379
+#        - 192.168.10.109:26379
+    cluster:
+      nodes:
+        - 192.168.10.101:6379
+        - 192.168.10.102:6379
+        - 192.168.10.109:6379
+        - 192.168.10.101:6380
+        - 192.168.10.102:6380
+        - 192.168.10.109:6380
+
+```
+读写分离
+```java
+    @Bean
+    public LettuceClientConfigurationBuilderCustomizer clientConfigurationBuilderCustomizer(){
+        return clientConfigurationBuilder -> {
+            //优先从replica中读取数据，replica不可读才从master读
+            clientConfigurationBuilder.readFrom(ReadFrom.REPLICA_PREFERRED);
+        };
+    }
+```
+
+
+## 关于redis的密码配置 (一般是写在配置文件中的)
+> requirepass作用：对登录权限做限制，redis每个节点的requirepass可以是独立、不同的，用来验证客户端
+> masterauth作用：主要是针对master对应的slave节点设置的，在slave节点数据同步的时候用到，用来主从同步是对从节点进行校验
+
+配置的更新：
+> 可以在redis.conf中配置，不过要重启服务才能生效
+> 在redis命令进行更新，不过要注意rewrite到配置中，不然重启之后就会失效
+> CONFIG REWRITE requirepass/masterauth
+
+## redis实现分布式锁
+在集群模式下，多个jvm使用不同的synchronized锁，导致无法预料的问题
+解决方案：
+使用jvm外部的锁监视器，实现多进程之间的线程互斥
+分布式锁：**满足分布式系统或集群模式下多进程可见并互斥的锁**，另外分布式锁必须满足高可用，高并发的特征，并能保证获取锁过程中的安全性问题，避免死锁
+
+分布式锁的实现
+|           |    mysql                   |         redis        |         zookeeper    |
+|------------|-----------                 |-----------------     |--------------------  |
+|互斥         |   利用mysql本身的互斥锁机制    |利用setnx这样的互斥命令  | 利用节点的唯一性和有序性实现互斥|
+|高可用        |好                          |好                      | 好                |
+|高性能        |一般                         |好                     |   一般                |
+|安全性         |断开链接，自动释放锁             |利用锁超时时间，到期释放|     临时节点，断开自动释放链接|
+
+基于redis实现分布式锁
+**获取锁**
+互斥：保证只有一个线程能获取锁
+1. 利用`setnx lock thread1` 的返回值（设置成功返回1 否则返回0）
+2. 设置超时时间保证锁的释放：`expire lock 10 ` 
+
+以上两个步骤要保证原子性,可以在一个set命令中同时设置nx和过期时间
+`set lock thread1 ex 10 nx` --同时设置过期时间和检查锁是否存在，设置成功返回ok，设置失败返回nil
+
+> 阻塞获取锁：
+> 非阻塞获取锁：尝试一次成功返回true，失败返回false，不再等待转而处理其他逻辑
+**释放锁**
+手动释放 ： `del key`
+
+**实现分布式锁**
+```java
+public interface ILock {
+    /**
+     * 尝试锁定
+     * @param timeSec
+     * @return
+     */
+    boolean tryLock(long timeSec);
+
+    /**
+     * 解锁
+     */
+    void unlock();
+}
+public class SimpleRedisLock implements ILock{
+
+    private StringRedisTemplate redisTemplate;
+
+    /**
+     * 锁的名称
+     */
+    private String name;
+
+    private final static String KEY_PREFIX = "lock:";
+
+    public SimpleRedisLock(StringRedisTemplate redisTemplate, String name) {
+        this.redisTemplate = redisTemplate;
+        this.name = name;
+    }
+
+    @Override
+    public boolean tryLock(long timeSec) {
+        //获取线程标识
+        long id = Thread.currentThread().getId();
+        //设置锁，利用redis的原子性
+        Boolean result = redisTemplate.opsForValue().setIfAbsent(KEY_PREFIX + name, id + "", timeSec, TimeUnit.SECONDS);
+        //避免空指针问题
+        return Boolean.TRUE.equals(result);
+    }
+
+    @Override
+    public void unlock() {
+        redisTemplate.delete(KEY_PREFIX + name);
+    }
+}
+```
+* 以上锁存在问题：当线程1持有redis锁超时时（业务执行时间太长，超过超时时间），新的线程2过来又能重新获取到锁开始执行逻辑，如果原来的线程1的业务逻辑执行完毕，线程1释放锁（实际上释放了线程1的锁），则还是会出现并发的安全性问题
+* 解决方案：在释放锁时判断释放锁的标识（线程id）是否是和当前线程匹配
+
+修改释放锁的逻辑
+```java
+        @Override
+        public void unlock() {
+            //判断线程标识是否一致
+            String threadId = ID_PREFIX + Thread.currentThread().getId();
+            String id = redisTemplate.opsForValue().get(KEY_PREFIX+ name);
+            //当线程id相同时采取才释放锁
+            if (id.equals(threadId)) {
+                redisTemplate.delete(KEY_PREFIX + name);
+            }
+        }
+```
+* 以上锁存在的问题：释放锁时，判断锁和释放锁两个操作不具有原子性，可能出现线程1由于jvm的垃圾回收导致判断锁和释放锁之间发生阻塞，导致锁的超时释（不是由线程1正常释放），而线程2而可能在锁超时之后，线程1执行锁释放之前又写入了新的锁放，此时线程被cpu调度，线程1继续删除锁，则会导致线程2的锁被异常释放，进而导致线程安全问题
+* 使用lua脚本解决以上问题
+
+lua脚本：在一个脚本中编写多条redis命令，确保多条命令执行的原子性
+使用redis提供的call函数
+```java
+    redis.call('命令名称'，'key','otherparams');
+    //执行set name steven
+    redis.call('set','name' 'steven')
+```
+使用EVAL命令执行lua脚本
+```
+# numkeys :参数数量，也是键的数量
+EVAL script numkeys key [key ...] arg [arg ...]
+eval "return redis.call('set','name1234','steven')" 0
+eval "return redis.call('set',KEYS[1],ARGV[1])" 1 'name' 'rose'
+```
+```lua
+    --当前线程标识,ARGV[]从1开始索引
+    --local threadId = ARGV[1];
+    -- 锁的key,KEYS[]从1开始索引
+    --local key = KEYS[1] 
+    -- 获取锁中线程标识
+    local id = redis.call('get',KEYS[1])
+    --比较两者是否一致
+    if(id == ARGV[1])
+       return redis.call('del' KEYS[1])
+    end
+    return 0
+```
+ResisTemplate提供了execute方法来执行lua脚本
+```java
+	@Override
+	public <T> T execute(RedisScript<T> script, List<K> keys, Object... args) {
+		return scriptExecutor.execute(script, keys, args);
+	}
+```
+lua脚本释放锁实现
+```java
+    private static final DefaultRedisScript<Long> UNLOCK_SCRIPT;
+    static {
+        UNLOCK_SCRIPT = new DefaultRedisScript<>();
+        UNLOCK_SCRIPT.setLocation(new ClassPathResource("unlock.lua"));
+        UNLOCK_SCRIPT.setResultType(Long.class);
+    }
+    //使用lua脚本实现锁释放的原子性
+    @Override
+    public void unlock() {
+        redisTemplate.execute(UNLOCK_SCRIPT, Arrays.asList(KEY_PREFIX + name),
+                ID_PREFIX+Thread.currentThread().getId());
+    }
+```
+以上实现的分布式锁还存在的问题：
+> 不可重入，一个线程无法多次获得相同的一把锁
+> 不可重试，获取锁只尝试一次就返回false，没有重试机制
+> 超时释放，业务时间过长导致超时释放，存在安全隐患
+> 主从一致性问题，当主宕机时，由于主从复制的延迟可能出现锁判断异常的问题
+
+使用Redisson实现分布式锁
+在redis基础上实现的java驻内存的数据网格，提供了一系列java分布式对象，提供各种分布式锁的实现
+**推荐使用redisson框架来实现分布式锁**
+```java
+@Configuration
+public class RedissonConfig {
+    @Bean
+        public RedissonClient redissonClient(){
+            Config config = new Config();
+            config.useSingleServer().setAddress("redis://localhost:6379").setPassword("dxy");
+            return Redisson.create(config);
+        }
+        //获取锁
+       redissonClient.tryLock(.....) 
+}
+
+```
+redisson可重入锁原理：参考jdk中的ReentrantLock实现原理
+redisson的可重试锁 ：使用watchdog
+
+## 多级缓存
 

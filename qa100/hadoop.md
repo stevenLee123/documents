@@ -7,7 +7,7 @@
 
 > spark: 为大量数据处理而设计的快速通用设计引擎
 > hive: Hive 是基于 Hadoop 的一个数据仓库工具，可以将结构化的数据文件映射为一张数据库表，并提供 SQL 查询功能，可以将 SQL 语句转换为 MapReduce 任务进行运行。
-> hbase : 分布式kv系统，强读写译执行，适合高速计算聚合，以hdfs作为底层文件系统
+> hbase : 分布式kv系统，强读写一致性，适合高速计算聚合，以hdfs作为底层文件系统
 
 ## zookeeper
 开源的分布式的程序协调服务，提供命名、配置管理、同步和组服务，实现高吞吐量和低延迟，保证高性能、高可用性、严格有序的访问
@@ -66,7 +66,6 @@ hadoop-env.sh
 配置java home
 > HDFS_NAMENODE_OPTS   -> NameNode
 > HDFS_DATANODE_OPTS  -> Secondary NameNode
-> HDFS_DATANODE_OPTS -> 
 
 core-site.xml 核心配置文件模块
 ```xml
@@ -77,7 +76,7 @@ core-site.xml 核心配置文件模块
         <!--用于指定namenode地址在node1机器上-->
         <value>hdfs://node1:8020</value>
     </property>
-    <!--配置Hadoop的临时目录，默认/tem/hadoop-${user.name}-->
+    <!--配置Hadoop的临时目录，默认/temp/hadoop-${user.name}-->
     <property>
         <name>hadoop.tmp.dir</name>
         <value>/export/data/hadoop-3.3.4</value>
