@@ -546,6 +546,9 @@ redis-cli --cluster help --查看redis 集群的所有命令
 # 查看集群状态
 redis-cli -p 6379 cluster nodes
 
+#根据key计算hash值找到插槽放入
+set numdfsdf 123
+ Redirected to slot [7027] located at 192.168.10.102:6379
 ```
 **slot散列插槽**
 redis数据不与节点绑定，而是与插槽绑定，redis根据key的有效部分计算插槽值：
@@ -553,5 +556,107 @@ redis数据不与节点绑定，而是与插槽绑定，redis根据key的有效�
 * key中不包含{}，整个key都是有效部分，
 * redis利用crc16算法计算有效部分得到一个hash值，然后对16384取余，得到的结果就是slot值
 
+* 同一类数据可以使用‘{}’包含相同的有效部分，计算插槽时能同类数据放入相同的插槽内
+
+**集群伸缩**
+```shell
+#需要新node的ip端口号，和集群中已经存在的ip和端口号
+redis-cli --cluster  add-node       new_host:new_port existing_host:existing_port --cluster-slave --cluster-master-id
+## 重新对slot进行分片，
+redis-cli --cluster reshard        <host:port> or <host> <port> - separated by either colon or space
+
+```
+
+```shell
+# 添加节点
+./bin/redis-cli --cluster add-node 192.168.10.101:6390 192.168.10.101:6379
+>>> Adding node 192.168.10.101:6390 to cluster 192.168.10.101:6379
+>>> Performing Cluster Check (using node 192.168.10.101:6379)
+M: b8ebbaca3fa30777b9ba7de21ea9b9b900475ad7 192.168.10.101:6379
+   slots:[0-5460] (5461 slots) master
+   1 additional replica(s)
+M: ec784c9abd671fc6013f7679f2fab280d17a9530 192.168.10.109:6379
+   slots:[10923-16383] (5461 slots) master
+   1 additional replica(s)
+S: a0b2579357a31a1518a897aa19eb817cf213b3c8 192.168.10.101:6380
+   slots: (0 slots) slave
+   replicates ec784c9abd671fc6013f7679f2fab280d17a9530
+S: f51846d48de4f7cd5ca9e6a71d37f552fe120c1e 192.168.10.102:6380
+   slots: (0 slots) slave
+   replicates b8ebbaca3fa30777b9ba7de21ea9b9b900475ad7
+S: 4bf6a83fa27cb0e54e9a7711b01f998d013536a9 192.168.10.109:6380
+   slots: (0 slots) slave
+   replicates 5f7f1e87e3dc35e4b0ca535991e358e666af1c52
+M: 5f7f1e87e3dc35e4b0ca535991e358e666af1c52 192.168.10.102:6379
+   slots:[5461-10922] (5462 slots) master
+   1 additional replica(s)
+[OK] All nodes agree about slots configuration.
+>>> Check for open slots...
+>>> Check slots coverage...
+[OK] All 16384 slots covered.
+>>> Getting functions from cluster
+>>> Send FUNCTION LIST to 192.168.10.101:6390 to verify there is no functions in it
+>>> Send FUNCTION RESTORE to 192.168.10.101:6390
+>>> Send CLUSTER MEET to node 192.168.10.101:6390 to make it join the cluster.
+[OK] New node added correctly.
+#加入的节点默认没有插槽
+## slot插槽移动
+#指定集群内的一个ip和端口进入reshard
+./bin/redis-cli --cluster reshard 192.168.10.101:6379
+>>> Performing Cluster Check (using node 192.168.10.101:6379)
+M: b8ebbaca3fa30777b9ba7de21ea9b9b900475ad7 192.168.10.101:6379
+   slots:[0-5460] (5461 slots) master
+   1 additional replica(s)
+M: ec784c9abd671fc6013f7679f2fab280d17a9530 192.168.10.109:6379
+   slots:[10923-16383] (5461 slots) master
+   1 additional replica(s)
+S: a0b2579357a31a1518a897aa19eb817cf213b3c8 192.168.10.101:6380
+   slots: (0 slots) slave
+   replicates ec784c9abd671fc6013f7679f2fab280d17a9530
+S: f51846d48de4f7cd5ca9e6a71d37f552fe120c1e 192.168.10.102:6380
+   slots: (0 slots) slave
+   replicates b8ebbaca3fa30777b9ba7de21ea9b9b900475ad7
+S: 4bf6a83fa27cb0e54e9a7711b01f998d013536a9 192.168.10.109:6380
+   slots: (0 slots) slave
+   replicates 5f7f1e87e3dc35e4b0ca535991e358e666af1c52
+M: 5f7f1e87e3dc35e4b0ca535991e358e666af1c52 192.168.10.102:6379
+   slots:[5461-10922] (5462 slots) master
+   1 additional replica(s)
+M: 755c2cc9432306cc5eed1048174918c48090ae0e 192.168.10.101:6390
+   slots: (0 slots) master
+[OK] All nodes agree about slots configuration.
+>>> Check for open slots...
+>>> Check slots coverage...
+[OK] All 16384 slots covered.
+## 指定要移动多少个插槽
+How many slots do you want to move (from 1 to 16384)? 2000
+What is the receiving node ID? 755c2cc9432306cc5eed1048174918c48090ae0e
+Please enter all the source node IDs.
+  Type 'all' to use all the nodes as source nodes for the hash slots.
+  Type 'done' once you entered all the source nodes IDs.
+## 指定要移动插槽的源节点  ，从上面的节点列表中找到节点的hash值
+Source node #1: b8ebbaca3fa30777b9ba7de21ea9b9b900475ad7
+##可以指定多个源节点，如果要结束，指定done
+Source node #2: done
+
+Ready to move 2000 slots.
+  Source nodes:
+    M: b8ebbaca3fa30777b9ba7de21ea9b9b900475ad7 192.168.10.101:6379
+       slots:[0-5460] (5461 slots) master
+       1 additional replica(s)
+  Destination node:
+    M: 755c2cc9432306cc5eed1048174918c48090ae0e 192.168.10.101:6390
+       slots: (0 slots) master
+  # 开始移动     
+  Resharding plan:
+    Moving slot 0 from b8ebbaca3fa30777b9ba7de21ea9b9b900475ad7
+.......
+```
+
+**故障转移**
+分片集群模式下依然支持自动故障转移
+
+手动故障转移
+利用cluster failover命令手动让集群中的某个master宕机，切换到执行cluster failover命令的这个slave节点，实现无感知的数据迁移
 
 

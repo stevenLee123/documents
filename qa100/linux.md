@@ -10,3 +10,8 @@
 ```shell
  kill -9 `lsof -i:6379| awk 'NR==2{print $2}'`
 ```
+## sed替换文件内容
+将/var/www/test文件夹下的所有文件内容中的abc字符串换成123
+sed -i "s/abc/123/g" `grep abc -rl /var/www/test`
+替换文件，将index.html中的abc替换成123
+sed -i "s/abc/123/g" /var/www/test/index.html
