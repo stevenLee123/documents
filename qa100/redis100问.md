@@ -472,11 +472,86 @@ info replication
 如果主服务器重新上线，此时并不会重新进行主服务器的选举。
 此时观察redis.conf文件，发现文件内的slaveof 主从配置被修改掉（主服务器被配置了一个slaveof属性）
 
-**集群模式**
+spring boot对sentinel的支持
+```yml
+spring:
+  redis:
+    database: 0
+    lettuce:
+      pool:
+        enabled: true
+        max-idle: 8
+        min-idle: 1
+        max-wait: 1000ms
+        max-active: 8
+    password: dxy123456
+    ## sentinel集群配置
+    sentinel:
+      master: mymaster
+      nodes:
+        - 192.168.10.101:26379
+        - 192.168.10.102:26379
+        - 192.168.10.109:26379
+```
+```java
+    //读写分离配置
+    @Bean
+    public LettuceClientConfigurationBuilderCustomizer clientConfigurationBuilderCustomizer(){
+        return clientConfigurationBuilder -> {
+            //优先从replica中读取数据，replica不可读才从master读
+            clientConfigurationBuilder.readFrom(ReadFrom.REPLICA_PREFERRED);
+        };
+    }
+    //使用
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+
+    @GetMapping("/user/{id}")
+    public String getUser(@PathVariable("id") Long id){
+        return redisTemplate.opsForValue().get("dxy:user:"+id);
+    }
+```
+
+
+**分片集群模式**
+
+> 集群中存在多个master，每个master保存不同的数据
+> 每个master上有多个slave节点
+> master之间通过ping监测彼此之间的健康状态
+> 客户端请求可以访问集群中的任意节点，最终都会被转发到正确的节点
+
+搭建分片集群
 
 依据 Redis Cluster 内部故障转移实现原理，Redis 集群至少需要 3 个主节点，而每个主节点至少有 1 从节点，因此搭建一个集群至少包含 6 个节点，三主三从，并且分别部署在不同机器上。
 这里采用在三台centos7虚拟机上使用不同的端口号进行部署
-每台机器部署两个redis进程，
-
+每台机器部署两个redis进程
 参考地址：https://zhuanlan.zhihu.com/p/320510950
+1. 修改redis配置文件：
+```
+# 开启集群
+cluster-enabled yes
+#集群配置文件
+cluster-config-file nodes-6379.conf
+#集群心跳超时时间
+cluster-node-timeout 15000
+```
+2. 分别启动六台redis服务器
+./bin/redis-server redis.conf
+
+3. 设置集群
+```shell
+redis-cli --cluster help --查看redis 集群的所有命令
+##设置集群， 每个主节点一个从节点cluster-replica为1，前三个为主节点，后三个为从节点
+./bin/redis-cli --cluster create --cluster-replicas 1 [-a password] 192.168.10.101:6379 192.168.10.102:6379 192.168.10.109:6379 192.168.10.101:6380 192.168.10.102:6380 192.168.10.109:6380
+# 查看集群状态
+redis-cli -p 6379 cluster nodes
+
+```
+**slot散列插槽**
+redis数据不与节点绑定，而是与插槽绑定，redis根据key的有效部分计算插槽值：
+* 当key中包含‘{}’，且{}中至少包含一个字符，‘{}’中的部分是有效部分
+* key中不包含{}，整个key都是有效部分，
+* redis利用crc16算法计算有效部分得到一个hash值，然后对16384取余，得到的结果就是slot值
+
+
 
