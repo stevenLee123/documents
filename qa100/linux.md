@@ -15,3 +15,12 @@
 sed -i "s/abc/123/g" `grep abc -rl /var/www/test`
 替换文件，将index.html中的abc替换成123
 sed -i "s/abc/123/g" /var/www/test/index.html
+
+## 创建用户
+useradd test
+修改密码
+passwd test
+
+## 授权
+修改文件所有者
+chown -R test:root mysql/*
