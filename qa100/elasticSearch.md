@@ -168,8 +168,8 @@ es7后逐渐淘汰了type
 }
 
 **mapping 操作**
-数据类型
-简单数据类型
+#### 数据类型
+**简单数据类型**
 * 字符串 
     * text 会分词，不支持聚合
     * keyword 不会分词，将全部内容作为词条支持聚合
@@ -177,7 +177,7 @@ es7后逐渐淘汰了type
     * long
     * integer
     * short
-    * byte
+    * byte 
     * double
     * float
     * half_float
@@ -192,11 +192,12 @@ es7后逐渐淘汰了type
 
 * 日期 date
 
-复杂数据类型
+**复杂数据类型**
 * 数组 []
 * 对象 {}
 *使用kibana操作*
 添加映射
+```
 PUT person/_mapping
 {
   "properties":{
@@ -212,8 +213,10 @@ PUT person/_mapping
 {
   "acknowledged" : true
 }
+```
 
 创建索引时添加映射
+```
 PUT person
 {
   "mappings": {
@@ -234,8 +237,10 @@ PUT person
   "shards_acknowledged" : true,
   "index" : "person"
 }
+```
 
 查询映射
+```
 GET person/_mapping
 
 --结果
@@ -253,9 +258,10 @@ GET person/_mapping
     }
   }
 }
+```
 
 添加字段
-
+```
 PUT person/_mapping
 {
    "properties":{
@@ -269,9 +275,10 @@ PUT person/_mapping
 {
   "acknowledged" : true
 }
-
+```
 
 查询
+```
 GET person
 --结果
 {
@@ -311,10 +318,11 @@ GET person
     }
   }
 }
-
+```
 **操作文档**
 添加文档
 指定id方式
+```
 PUT/POST person/_doc/1
 {
   "name":"zhangsan",
@@ -335,7 +343,9 @@ PUT/POST person/_doc/1
   "_seq_no" : 0,
   "_primary_term" : 1
 }
+```
 不指定id 必须使用post
+```
 POST person/_doc
 {
   "name":"lisi",
@@ -357,7 +367,7 @@ POST person/_doc
     "address" : "shanghai"
   }
 }
-
+```
 查询文档
 根据id查询
 GET person/_doc/1
@@ -817,7 +827,8 @@ GET person/_search
 }
 
 ## java api
-整合springboot
+
+### 整合springboot
 ```xml
   <dependency>
             <groupId>org.elasticsearch</groupId>
@@ -871,7 +882,7 @@ elastic:
   host: 127.0.0.1
   port: 6379
   ```
-
+### 简单操作
 创建索引
 
 ```java
@@ -959,4 +970,714 @@ elastic:
     
     }
 ```
+修改
+```java
+   @Test
+    public void updateDoc() throws IOException {
+        //修改，当id存在时是修改，当id不存在时是新增
+        Person data = new Person(2L,"孙悟空",1000,"花果山水帘洞");
+        IndexRequest indexRequest = new IndexRequest("person2").id(data.getId().toString()).source(JSONObject.toJSONString(data),XContentType.JSON);
+        IndexResponse response = client.index(indexRequest, RequestOptions.DEFAULT);
+        log.info("result:id:{},seqno:{},status:{},shardId:{}",response.getId(),response.getSeqNo(),response.status(),response.getShardId());
+    }
+```
+查询
+```java
+    @Test
+    public void getDoc() throws IOException {
+        GetRequest getRequest = new GetRequest("person2","2");
+        GetResponse response = client.get(getRequest, RequestOptions.DEFAULT);
+        System.out.println(response.getSourceAsString());
+    }
+```
+删除文档
+```java
+    @Test
+    public void deleteDoc() throws IOException {
+        DeleteRequest deleteRequest = new DeleteRequest("person2","2");
+        DeleteResponse response = client.delete(deleteRequest, RequestOptions.DEFAULT);
+        System.out.println(response.getId());
+    }
+```
+
+### 高级操作
+**批量操作**
+bulk 将文档的增删改查的一系列操作通过一次请求完全做完，减少网络传输次数，bulk内部的各个操作相互之间不会干扰对方
+```shell
+    POST _bulk
+    {"delete":{"_index":"person","_id":"VKUVD4cBMCkLBtUeHUOM"}}
+    {"create":{"_index":"person","_id":"10"}}
+    {"name":"孙悟空","age":10001,"address":"花果山水帘洞"}
+    {"update":{"_index":"person","_id":"2"}}
+    {"doc":{"name":"王武"}}
+
+    #结果
+    {
+  "took" : 16,
+  "errors" : false,
+  "items" : [
+    {
+      "delete" : {
+        "_index" : "person",
+        "_id" : "VKUVD4cBMCkLBtUeHUOM",
+        "_version" : 2,
+        "result" : "deleted",
+        "_shards" : {
+          "total" : 2,
+          "successful" : 1,
+          "failed" : 0
+        },
+        "_seq_no" : 6,
+        "_primary_term" : 1,
+        "status" : 200
+      }
+    },
+    {
+      "create" : {
+        "_index" : "person",
+        "_id" : "10",
+        "_version" : 1,
+        "result" : "created",
+        "_shards" : {
+          "total" : 2,
+          "successful" : 1,
+          "failed" : 0
+        },
+        "_seq_no" : 7,
+        "_primary_term" : 1,
+        "status" : 201
+      }
+    },
+    {
+      "update" : {
+        "_index" : "person",
+        "_id" : "2",
+        "_version" : 2,
+        "result" : "updated",
+        "_shards" : {
+          "total" : 2,
+          "successful" : 1,
+          "failed" : 0
+        },
+        "_seq_no" : 8,
+        "_primary_term" : 1,
+        "status" : 200
+      }
+    }
+  ]
+}
+```
+java代码bulk
+```java
+
+    @Test
+    public void bulkTest() throws IOException {
+        BulkRequest bulkReuquest = new BulkRequest();
+        //删除操作
+        bulkReuquest.add(new DeleteRequest("person","1"));
+        //添加
+        Map dataMap =new HashMap<>();
+        dataMap.put("address","中国北京昌平");
+        dataMap.put("name","赵四");
+        dataMap.put("age",25);
+        bulkReuquest.add(new IndexRequest("person").id("20").source(dataMap));
+        //修改
+        Map dataMap2 =new HashMap<>();
+        dataMap2.put("name","孙子");
+        dataMap2.put("age",90);
+        bulkReuquest.add(new UpdateRequest("person","6").doc(dataMap2));
+        BulkResponse bulk = client.bulk(bulkReuquest, RequestOptions.DEFAULT);
+        log.info("status:{}",bulk.status());
+    }
+```    
+
+**导入数据**
+将数据库中的数据导入es中
+* 创建索引
+* 将数据从mysql等存储源中读取出来
+* 将数据写入es
+
+```java
+    //将数据写入es
+    @Test
+    public void importToEs() throws IOException {
+        List<Word> list = wordService.list();
+
+        BulkRequest bulkRequest = new BulkRequest();
+        list.forEach(user ->{
+            IndexRequest indexRequest  = new IndexRequest("word");
+            indexRequest.id(user.getId().toString()).source(JSONObject.toJSONString(user), XContentType.JSON);
+            bulkRequest.add(indexRequest);
+        });
+        BulkResponse bulk = client.bulk(bulkRequest, RequestOptions.DEFAULT);
+        log.info("result:{}" ,bulk.status());
+    }
+```
+
+
+**各种查询**
+
+**match_all**
+查询指定条数的数据，默认情况下es会自懂进行分页
+```
+# 从0开始查询300条数据，分页查询
+get word/_search
+{
+  "query":{
+    "match_all":{}
+  },
+  "from":0,
+  "size":300
+}
+
+----结果
+
+{
+  "took" : 1,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 1,
+    "successful" : 1,
+    "skipped" : 0,
+    "failed" : 0
+  },
+  "hits" : {
+    "total" : {
+      "value" : 10000,
+      "relation" : "gte"
+    },
+    "max_score" : 1.0,
+    "hits" : [
+      {
+        "_index" : "word",
+        "_id" : "25",
+        "_score" : 1.0,
+        "_source" : {
+          "createTime" : 1663945788000,
+          "creator" : "yanghailong",
+          "id" : 25,
+          "name" : "实体词测试1",
+          "reviewer" : "zhouyunjie",
+          "sourceType" : 1,
+          "status" : 1,
+          "updateTime" : 1663954758000,
+          "wordType" : 13
+        }
+      },
+      {
+        "_index" : "word",
+        "_id" : "26",
+        "_score" : 1.0,
+        "_source" : {
+          "createTime" : 1663947575000,
+          "id" : 26,
+          "name" : "类型测试2",
+          "sourceType" : 2,
+          "status" : 2,
+          "updateTime" : 1663947575000,
+          "wordType" : 13
+        }
+      },
+      {
+        "_index" : "word",
+        "_id" : "27",
+        "_score" : 1.0,
+        "_source" : {
+          "createTime" : 1663947575000,
+          "id" : 27,
+          "name" : "类型测试3",
+          "reviewer" : "yinxing",
+          "sourceType" : 2,
+          "status" : 3,
+          "updateTime" : 1663955823000,
+          "wordType" : 13
+        }
+      }
+    ]
+  }
+}
+
+```
+java api操作
+```java
+ @Test
+    public void testMatchAll() throws IOException {
+        SearchRequest searchRequest = new SearchRequest("word");
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        //指定查询条件,match_all,不指定分页情况下默认查询10条
+        sourceBuilder.query(QueryBuilders.matchAllQuery());
+        //指定分页
+        sourceBuilder.from(0).size(100);
+        searchRequest.source(sourceBuilder);
+
+        SearchResponse search = client.search(searchRequest, RequestOptions.DEFAULT);
+        SearchHits hits = search.getHits();
+        log.info("hits:{}",hits.getTotalHits().value);
+        final SearchHit[] hits1 = hits.getHits();
+        for (SearchHit hit : hits1) {
+            final String sourceAsString = hit.getSourceAsString();
+            Word word = JSONObject.parseObject(sourceAsString,Word.class);
+            log.info("获取到的word：{}",word);
+        }
+    }
+```
+
+**term 查询**
+不会对查询词条进行分词
+一般查询分类字段等枚举类型的数据
+如果指定了ik_max_word分词，可能查询不到任何数据
+```
+get word/_search
+{
+  "query":{
+    "term":{
+      "modifier":{
+        "value":"zhouyunjie"
+      }
+    }
+  }
+}
+```
+```java
+//termquery
+SearchRequest searchRequest = new SearchRequest("word");
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        //指定查询条件,match_all,不指定分页情况下默认查询10条
+        sourceBuilder.query(QueryBuilders.termQuery("wordType",16));
+        //指定分页
+        sourceBuilder.from(0).size(100);
+        searchRequest.source(sourceBuilder);
+
+        SearchResponse search = client.search(searchRequest, RequestOptions.DEFAULT);
+        SearchHits hits = search.getHits();
+        log.info("hits:{}",hits.getTotalHits().value);
+        final SearchHit[] hits1 = hits.getHits();
+        for (SearchHit hit : hits1) {
+            final String sourceAsString = hit.getSourceAsString();
+            Word word = JSONObject.parseObject(sourceAsString,Word.class);
+            log.info("获取到的word：{}",word);
+        }
+```
+**match**
+对查询条件进行分词查询（分词后的本值匹配）,默认取并集（or），可以指定交集（and）
+```json
+#并集
+get word/_search
+{
+  "query":{
+    "match":{
+      "name":"鼾声"
+    }
+  }
+}
+#交集
+get word/_search
+{
+  "query":{
+    "match":{
+      "name":{
+        "query": "血压",
+        "operator": "and"
+      }
+    }
+  }
+}
+```
+
+java api
+```java
+  @Test
+    public void testMatch() throws IOException {
+        SearchRequest searchRequest = new SearchRequest("word");
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        //指定查询条件,match_all,不指定分页情况下默认查询10条
+        MatchQueryBuilder matchQueryBuilder = QueryBuilders.matchQuery("name", "血压");
+        //指定交集
+        matchQueryBuilder.operator(Operator.AND);
+        sourceBuilder.query(matchQueryBuilder);
+        //指定分页
+        sourceBuilder.from(0).size(100);
+        searchRequest.source(sourceBuilder);
+
+        SearchResponse search = client.search(searchRequest, RequestOptions.DEFAULT);
+        SearchHits hits = search.getHits();
+        log.info("hits:{}",hits.getTotalHits().value);
+        final SearchHit[] hits1 = hits.getHits();
+        for (SearchHit hit : hits1) {
+            final String sourceAsString = hit.getSourceAsString();
+            Word word = JSONObject.parseObject(sourceAsString,Word.class);
+//            log.info("获取到的word：{}",word);
+        }
+    }
+```
+**模糊查询wildcard**
+注意不要在查询字符串前面写通配符（*，?等），这样做会导致扫描全部的倒排索引
+```
+get word/_search
+{
+  "query":{
+    "wildcard":{
+      "name":{
+        "value": "血*"
+        
+      }
+    }
+  }
+}
+```
+**regexp 正则查询**
+```
+get word/_search
+{
+  "query":{
+    "regexp":{
+      "name":"血*"
+    }
+  }
+}
+```
+**前缀查询**
+```
+get word/_search
+{
+  "query":{
+    "prefix":{
+      "name":{
+        "value":"血"
+      }
+    }
+  }
+}
+```
+
+**范围查& 排序查询**
+range
+gte 大于等于
+lte 小于等于
+sort 排序
+```
+get word/_search
+{
+  "query":{
+    "range": {
+      "wordType": {
+        "gte": 35,
+        "lte": 40
+      }
+    }
+  },
+  "sort":[
+    {
+      "id":{
+        "order":"desc"
+      }
+    }
+    ]
+}
+```
+```java
+   @Test
+    public void testRange() throws IOException {
+        SearchRequest searchRequest = new SearchRequest("word");
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        //range查询
+        final RangeQueryBuilder queryBuilder = QueryBuilders.rangeQuery("wordType");
+        queryBuilder.gte(30).lte(40);
+        sourceBuilder.query(queryBuilder);
+//        sourceBuilder.sort("id", SortOrder.DESC);
+        sourceBuilder.sort("id", SortOrder.ASC);
+        //指定分页
+        sourceBuilder.from(0).size(10);
+        searchRequest.source(sourceBuilder);
+
+        SearchResponse search = client.search(searchRequest, RequestOptions.DEFAULT);
+        SearchHits hits = search.getHits();
+        log.info("hits:{}",hits.getTotalHits().value);
+        final SearchHit[] hits1 = hits.getHits();
+        for (SearchHit hit : hits1) {
+            final String sourceAsString = hit.getSourceAsString();
+            Word word = JSONObject.parseObject(sourceAsString,Word.class);
+            log.info("获取到的word：{}",word);
+        }
+    }
+```
+
+**queryString查询**
+对查询条件进行分词
+默认匹配查询取并集
+多字段同时查询
+query_string : 将query中的AND符号也作为分词后的查询条件
+```json
+GET word/_search
+{
+  "query": {
+    "query_string": {
+      "fields": ["name","creator"],
+      "query": "lijie3 AND 实体"
+    }
+  }
+}
+```
+simple_string_query: 将query 中的AND不作为分词后的条件
+```json
+GET word/_search
+{
+  "query": {
+    "simple_query_string": {
+      "fields": ["name","creator"],
+      "query": "lijie3 AND 实体"
+    }
+  }
+}
+```
+
+**布尔查询**
+boolQuery: 对多个查询条件连接，连接方式：
+> must (and):条件必须成立,计算得分
+> must_not(not)：条件必须不成立
+> should( or) ：条件可以成立 
+> filter：条件必须成立，性能比must高，不会计算得分
+
+```json
+GET word/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          
+          "match":{
+            "creator": "zhouyunjie"
+          }
+        }
+      ],
+      "filter": [
+        {
+          "term": {
+            "name": "啦"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+**聚合查询**
+与mysql类型
+* 指标聚合，相当于 mysql的 max、min、avg等
+* 桶聚合，相当于mysql的group by，注意不要使用text类型的进行桶聚合，因为text字段会分词，导致分组失败
+
+指标聚合
+```json
+GET word/_search
+{
+  "query": {
+    "match": {
+      "name": "实体"
+    }
+  },
+  "aggs": {
+    "max_id": {
+      "max": {
+        "field": "id"
+      }
+      
+    }
+  }
+}
+--结果
+{
+    .....
+    //聚合结果
+  "aggregations" : {
+    "max_id" : {
+      "value" : 287919.0
+    }
+  }
+}
+
+```
+
+桶聚合
+```json
+GET word/_search
+{
+  "query": {
+    "match": {
+      "name": "实体"
+    }
+  },
+  "aggs": {
+    "creator_name": {
+      "terms": {
+        "field": "creator",
+        "size": 10
+      }
+    }
+  }
+  
+}
+---结果
+"aggregations" : {
+    "creator_name" : {
+      "doc_count_error_upper_bound" : 0,
+      "sum_other_doc_count" : 0,
+      "buckets" : [
+        {
+          "key" : "lijie3",
+          "doc_count" : 11
+        }
+      ]
+    }
+  }
+```
+
+```java
+    @Test
+    public void testAggrs() throws IOException {
+        SearchRequest searchRequest = new SearchRequest("word");
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        //range查询
+        final MatchQueryBuilder queryBuilder = QueryBuilders.matchQuery("name","实体");
+        sourceBuilder.query(queryBuilder);
+        AggregationBuilder agg = AggregationBuilders.terms("agg_creator").field("creator").size(20);
+        sourceBuilder.aggregation(agg);
+        //指定分页
+        sourceBuilder.from(0).size(10);
+        searchRequest.source(sourceBuilder);
+
+        SearchResponse search = client.search(searchRequest, RequestOptions.DEFAULT);
+        SearchHits hits = search.getHits();
+        log.info("hits:{}",hits.getTotalHits().value);
+        final SearchHit[] hits1 = hits.getHits();
+        for (SearchHit hit : hits1) {
+            final String sourceAsString = hit.getSourceAsString();
+            Word word = JSONObject.parseObject(sourceAsString,Word.class);
+            log.info("获取到的word：{}",word);
+        }
+        //对聚合查询的结果解析
+        Aggregations aggregations = search.getAggregations();
+        Map<String, Aggregation> stringAggregationMap = aggregations.asMap();
+        Terms aggCreator = (Terms) stringAggregationMap.get("agg_creator");
+        List<? extends Terms.Bucket> buckets = aggCreator.getBuckets();
+        buckets.forEach(bucket -> {
+            log.info("key:{},count:{}",bucket.getKey(),bucket.getDocCount());
+        });
+    }
+```
+**高亮查询**
+```json
+GET word/_search
+{
+  "query": {
+    "match": {
+      "name": "实体"
+    }
+  },
+  "highlight": {
+    "fields": {
+      "name":{
+        "pre_tags": "<font color='red'>",
+        "post_tags": "</font>"
+      }
+    }
+  }
+}
+
+--结果
+{
+  "took" : 961,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 1,
+    "successful" : 1,
+    "skipped" : 0,
+    "failed" : 0
+  },
+  "hits" : {
+    "total" : {
+      "value" : 11,
+      "relation" : "eq"
+    },
+    "max_score" : 11.840421,
+    "hits" : [
+      {
+        "_index" : "word",
+        "_id" : "199815",
+        "_score" : 11.840421,
+        "_source" : {
+          "createTime" : 1679322522000,
+          "creator" : "lijie3",
+          "id" : 199815,
+          "modifier" : "lijie3",
+          "name" : "实体瘤",
+          "sourceType" : 2,
+          "status" : 1,
+          "updateTime" : 1679322522000,
+          "wordType" : 43
+        },
+        "highlight" : {
+          "name" : [
+            "<font color='red'>实体</font>瘤"
+          ]
+        }
+      }
+      }
+
+```
+java api
+```java
+    @Test
+    public void testHighLight() throws IOException {
+        SearchRequest searchRequest = new SearchRequest("word");
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        //range查询
+        final MatchQueryBuilder queryBuilder = QueryBuilders.matchQuery("name","实体");
+        HighlightBuilder highlightBuilder = new HighlightBuilder();
+        highlightBuilder.field("name").preTags("<font color='red'>").postTags("</font>");
+        sourceBuilder.highlighter(highlightBuilder);
+        sourceBuilder.query(queryBuilder);
+        //指定分页
+        sourceBuilder.from(0).size(10);
+        searchRequest.source(sourceBuilder);
+
+        SearchResponse search = client.search(searchRequest, RequestOptions.DEFAULT);
+        SearchHits hits = search.getHits();
+        log.info("hits:{}",hits.getTotalHits().value);
+        final SearchHit[] hits1 = hits.getHits();
+        for (SearchHit hit : hits1) {
+            final String sourceAsString = hit.getSourceAsString();
+            Word word = JSONObject.parseObject(sourceAsString,Word.class);
+            final Map<String, HighlightField> highlightFields = hit.getHighlightFields();
+            final HighlightField highlightField = highlightFields.get("name");
+            Text[] text = highlightField.fragments();
+            word.setName(text[0].toString());
+            log.info("获取到的word：{}",word);
+        }
+
+    }
+```
+### 索引重建,索引别名
+**索引重建**
+es的索引一旦创建，只允许添加字段，不允许改变字段，因为改变字段，需要重新创建倒排索引，影响内部缓存结构，性能太低
+
+需要创建时，需要创建一个新的索引，将原有的索引数据导入新索引中，删除老板本索引，然后设置新版本索引别名
+
+```json
+POST _reindex
+{
+  "source": {
+    "index": "word"
+  },
+  "dest": {
+    "index": "word2"
+  }
+}
+```
+设置索引别名
+```json
+POST word2/_alias/word3
+```
+
+## es集群
 
