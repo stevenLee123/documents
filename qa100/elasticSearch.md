@@ -1680,4 +1680,98 @@ POST word2/_alias/word3
 ```
 
 ## es集群
+* 集群：多个人做一样的事情
+    * 让系统高可用
+    * 分担请求压力
+* 分布式：多个人做不一样的事情
+    * 分担存储和计算的压力，提速
+    * 解耦
+
+es天然支持分布式
+es的设计隐藏了分布式本身的复杂性
+
+> 配置clustername
+> node,集群中的实例
+> index，es存储索引的地方
+> shard（分片）,索引可以被拆分为不同的部分进行存储，称为分片，在集群环境下，一个索引的不同分片可以拆分到不同的节点中
+> 副本分片（replica shard） 每个主分片可以有多个副本，数据和主分片一样
+> 主分片（primary shard） 相对于副本分片的定义
+> 主分片与副本分片存储在不同的node上
+
+**集群搭建**
+基于es 8.6.1版本搭建
+修改elasticsearch.yml
+```yml
+# 集群名
+cluster.name: dxy-es-cluster
+#节点名
+node.name: node-1
+
+#节点内部之间通信
+transport.port: 9700
+# 节点发现
+discovery.seed_hosts: ["localhost:9700","localhost:9800","localhost:9900"]
+cluster.initial_master_nodes: ["node-1", "node-2","node-3"]
+path.data: /Users/lijie3/Documents/data/es/data1
+path.logs: /Users/lijie3/Documents/data/es/logs1
+```
+修改jvm.options修改内存配置
+```
+-Xms1g
+-Xmx1g
+```
+检查集群状态
+```
+http://localhost:9202/_cat/health?v
+```
+输出
+```
+epoch      timestamp cluster        status node.total node.data shards pri relo init unassign pending_tasks max_task_wait_time active_shards_percent
+1679714527 03:22:07  dxy-es-cluster green           3         3      2   1    0    0        0             0                  -                100.0%
+
+```
+
+**索引分片配置**
+默认情况下不指定分片信息，索引的主分片是1，副本分片是1
+创建索引时可以指定分片信息：
+```json
+PUT person
+{
+  "mappings": 
+    {
+    "properties":{
+      "name":{
+        "type":"keyword"
+      },
+      "age":{
+        "type":"integer"
+      },
+      "address":{
+        "type":"text",
+        "analyzer": "ik_max_word"
+      }
+    }
+  },
+  "settings": {
+    "number_of_shards": 3,
+    "number_of_replicas": 1
+  }
+}
+```
+三个主分片，每个主分片一个从分片，一共六个分片
+当节点出现宕机时，es会自动进行故障转移，维持分片数量不变
+分片配置方案推荐
+* 每个分片推荐大小为10-30gb
+* 分片数量推荐= 节点数量 * 3倍
+* es的分片不允许修改，如果需要修改索引分片，则需要重建索引
+
+脑裂
+集群中的主节点负责管理整个集群，创建索引、删除索引等
+集群中所有节点都会选择同一个节点作为主节点
+脑裂时因为从节点在选择主节点上出现分歧导致一个集群中选举出多个主节点从而导致集群分裂，使得集群处于异常状态
+* 由于网络延迟导致脑裂 --discovery.zen.ping.timeout配置大一点，默认配置的是3s
+* 主节点节点负载过高，导致master节点停止响应 --角色分离，避免主节点存储数据
+* jvm内存回收导致jvm大规模垃圾回收，造成es进程失去响应   --将jvm.options 配置改为服务器内存的一半
+节点中的数据量为奇数，避免脑裂
+
 
