@@ -1,4 +1,5 @@
 # Kafka
+开源分布式事件流平台，用于高性能数据数据管道，流分析，数据集成和关键任务应用
 * 消息队列
 * 临时存储
 * 分布式流平台（发布订阅流数据流、以容错的持久化方式存储数据流、处理流数据（kafka stream））
@@ -14,6 +15,9 @@
 producer负责将消息放入队列
 consumer负责将消息取出进行处理
 
+kafka broker使用scala实现
+producer和comsumer可以使用java实现
+
 ## 两种模式
 点对点模式：
 * 每个消息只有一个接收者，一旦被消费，消息就会从消息队列中移除
@@ -23,6 +27,50 @@ consumer负责将消息取出进行处理
 * 一条消息可以被对多个订阅者接受
 * 发布者和订阅者之间有时间上的依赖性，针对某个主题的订阅者，它必须创建一个订阅者之后，才能消费发布订阅者
 * 为了消费消息，订阅者需要提前订阅该角色主题，保持在线运行
+* 提供对消费者进行分组的功能，同一组的消费者并行消费，消费者消费不同的分区
+* 对消息数据进行分区，并提供多个分区备份，一个分区只能由一个消费者急性消费
+实际应用中多用的是发布订阅模式
+
+## kafka集群部署
+集群配置
+这里采取本地部署三个kafka实例的方式
+server.properties配置
+```yml
+# 节点broker-id
+broker.id=0
+#手动指定端口号
+port=9092
+# 日志数据目录
+log.dirs=/Users/lijie3/Documents/data/kafka/kafka-data
+# zookeeper连接地址，方便kafka数据的清理
+zookeeper.connect=localhost:2181,localhost:2182,localhost:2083/kafka
+```
+connect-distrubted.properties
+```yml
+#配置服务地址
+bootstrap.servers=localhost:9092
+```
+producer.properties
+```yml
+bootstrap.servers=localhost:9092
+```
+consumer.properties
+```yml
+bootstrap.servers=localhost:9092
+```
+connect-standalone.propeties
+```yml
+bootstrap.servers=localhost:9092
+```
+zookeeper.properties
+```yml
+#zookeeper数据存储配置地址
+dataDir=/Users/lijie3/Documents/data/kafka/zookeeper-data
+#zookeeper端口号
+clientPort=2181
+```
+*停止kafka时先关闭kafka进程，再关闭zookeeper*
+
 
 
 ## kafka基准测试工具
@@ -30,10 +78,43 @@ kafka内部提供了性能测试工具
 生产者：测试生产者每秒传输的数据量
 消费者：测试消费每秒拉取的数据量
 
+## 基本命令
+**主题**
+```shell
+./bin/kafka-topics.sh
+#查询所有topic
+./bin/kafka-topics.sh --bootstrap-server localhost:9092 --list 
+#新增test-topic
+./bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic test-topic
+#新增test-topic 指定3分区3副本
+./bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic test-topic --partitions 3 --replication-factor 3
+#查看分区详情
+/bin/kafka-topics.sh --bootstrap-server localhost:9092 --topic test-topic --describe
+Topic: test-topic	Partition: 0	Leader: 0	Replicas: 0	Isr: 0
+#修改，指定3个分区，分区只能增加不能减少，不能通过命令行修改副本
+/bin/kafka-topics.sh --bootstrap-server localhost:9092  --topic test-topic --alter --partitions 3
+```
+**生产者**
+```shell
+#发送数据
+./bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic test-topic
+> hello world
+```
+**消费者**
+```shell
+#从上次消费之后的偏移量开始消费
+./bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic test-topic
+#从队列头部开始消费
+/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic test-topic --from-beginning
+hello world
+```
+
+
 ## javaAPI
+
 生产者
 ```java
-//同步模式
+//不带回调的异步模式
  Properties prop = new Properties();
         prop.put("bootstrap.servers","localhost:9092");
         //应答种类
@@ -48,7 +129,7 @@ kafka内部提供了性能测试工具
         }
 ```
 ```java
-//异步回调
+//异步带回调
  public static void main(String[] args) throws ExecutionException, InterruptedException {
         Properties prop = new Properties();
         prop.put("bootstrap.servers","localhost:9092");
@@ -73,6 +154,9 @@ kafka内部提供了性能测试工具
             log.info("第"+i+"条消息");
         }
     }
+   //同步发送,直接使用阻塞方法get拿到发送的结果
+      kafkaProducer.send(
+                             new ProducerRecord<>("test-topic", null, "hello world,"+ i)).get(); 
 ```
 
 ```java
@@ -132,8 +216,94 @@ kafka内部提供了性能测试工具
 ```java
  prop.put("enable.idempotence",true);
 ```
-## 分区与副本机制
+
+## kafka生产者
+发送数据流程
+producer --> send（producerRecord）--> 拦截器（interceptor ，如flume等）--> 序列化器（serializer）-->分区器（partitioner,默认大小32M，每一批次大小16K，只有当发送的数据达到16k，才能发送这一批数据）-->sender（读取数据发送到broker）
+分区器：双端队列，内存池
+配置：
+batch.size 16K 分批发送大小
+linger.ms  500 （ms），如果批次数据没有达到16K，而时间到了500ms（默认0ms，表示发送没有延迟），这还是会发送这一批数据
+sender（读取数据发送到broker）：最多缓存5个允许5个请求同时发送，允许未收到应答继续发送，最多容忍5次未收到ACK
+同步处理：所有发送任务必须全部完成之后才进行返回
+异步发送：允许用户把消息放入消息队列，并不立即处理它，然后再需要的时候再去处理（实际上是在分区器中进行的异步，消息还未到达broker）
+
+
+### 分区器
+* 合理的使用存储资源，在每个Partition的broker上存储，把数据分布在broker，实现负载均衡
+* 提高并行度，以分区为单位发送数据，消费者可以以分区为单位消费数据
 ### 生产者分区写入策略
+默认分区策略： 
+* 如果指定的分区，则直接使用该分区进行发送
+* 如果没有指定分区，指定了key，则按key进行hash运算，得到分区进行发送
+* 如果没有指定key，则会选择粘性分区器，会随机选择一个分区，并尽可能一直使用该分区，待该分区的batch（16k一批次）已经满了，kafka再随机选择一个分区并与上次分区不同
+如果没有指定分区，则会根据key进行进行hash计算如果指定了分区，则直接发送到指定分区
+```java
+//指定key发送到相同分区
+ kafkaProducer.send(new ProducerRecord<>("test-topic", "f", "hell world async" +i ),((recordMetadata, e) -> {
+                    //判断发送是否成功
+                if(e == null){
+                    String topic = recordMetadata.topic();
+                    int partition = recordMetadata.partition();
+                    long offset = recordMetadata.offset();
+                    log.info("topic：{},partition:{},offset:{}",topic,partition,offset);
+                }else{
+                    e.printStackTrace();
+                }
+            }));
+```
+自定义分区器
+```java
+public class MyPartitioner implements Partitioner {
+    @Override
+    public int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] valueBytes, Cluster cluster) {
+        int partition = 0;
+        //获取数据
+        String msgVal = value.toString();
+        //根据内容选择分区
+        if(msgVal.contains("0")){
+            partition = 0;
+        }else{
+            partition = 1;
+        }
+        return partition;
+    }
+
+    @Override
+    public void close() {
+
+    }
+
+    @Override
+    public void configure(Map<String, ?> map) {
+
+    }
+}
+//producer端指定自定义分区器
+//指定自定义的partitioner
+        prop.put(ProducerConfig.PARTITIONER_CLASS_CONFIG,MyPartitioner.class.getName());
+        KafkaProducer<String,String> kafkaProducer = new KafkaProducer<String, String>(prop);
+        for (int i = 0; i < 100; i++) {
+//            Future<RecordMetadata> future =
+
+                    kafkaProducer.send(new ProducerRecord<>("test-topic",  "hell world" +i ),((recordMetadata, e) -> {
+                    //判断发送是否成功
+                if(e == null){
+                    String topic = recordMetadata.topic();
+                    int partition = recordMetadata.partition();
+                    long offset = recordMetadata.offset();
+                    log.info("topic：{},partition:{},offset:{}",topic,partition,offset);
+                }else{
+                    e.printStackTrace();
+                }
+            }));
+//            future.get();
+            log.info("第"+i+"条消息");
+        }
+        kafkaProducer.close();
+```
+
+#### 分区策略
 1. 轮询分区策略（默认策略）
     * 最大限度保证消息平均分配到一个分区
     * 如果在生产key为null的数据时，使用轮询算法均衡的分配分区
@@ -147,6 +317,198 @@ kafka内部提供了性能测试工具
 
 4. 自定义分区策略
     * 实现partitoner接口自定义分区
+
+### 生产者如何提高吞吐量
+* batch.size 默认16k修改批次大小， 36k
+* linger.ms  默认0ms，修改发送等待时间 5-100ms
+* compresson.type 压缩，使用snappy
+* RecordAccumaulator :设置缓存区大小，修改为64m
+
+```java
+ public static void main(String[] args) {
+        Properties prop = new Properties();
+        prop.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,"localhost:9092");
+        //应答种类
+        prop.put(ProducerConfig.ACKS_CONFIG,"all");
+        //序列化
+        prop.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        prop.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,StringSerializer.class.getName());
+
+        prop.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG,true);
+        //设置缓冲区大小,以字节为单位
+        prop.put(ProducerConfig.BUFFER_MEMORY_CONFIG,33554432);
+        //设置批次大小，以字节为单位
+        prop.put(ProducerConfig.BATCH_SIZE_CONFIG,16386);
+        //设置linger.ms，以ms为单位
+        prop.put(ProducerConfig.LINGER_MS_CONFIG,5);
+        //设置压缩
+        prop.put(ProducerConfig.COMPRESSION_TYPE_CONFIG,"snappy");
+        KafkaProducer<String,String> producer = new KafkaProducer<>(prop);
+        for (int i = 0; i < 100; i++) {
+            producer.send(new ProducerRecord<>("test-topic","hello world custom send properites "+ i));
+        }
+        producer.close();
+    }
+```
+### 发送数据的可靠性
+使用ack应答机制来保证数据可靠性
+> -1/all 所有的副本都写入成功才算写入成功，性能最差
+> 0 不等待broker确认，直接发送下一条数据，性能最高，可能存在数据丢失，不能在生产中使用
+> 1 等待leader副本确认接受后，才会发送下一条数据，性能中等
+当ack为all时，考虑这种情况：
+> leader收到数据后，还未同步数据给follower，有一个follower出现了宕机无法与leader通信，此时这条数据是不是一定就发送失败了？
+leader通过维护动态的in-sync replica set （ISR），指和leader保持同步的follower和leader的集合（ 示例： leader： 0，isr：0，1，2）
+如果follower 长时间未向leader发送通信请求或同步数据，则该follower将被踢出ISR，时间阈值配置：
+replica.lag.time.max.ms = 30
+
+如果分区副本设置为1，或者ISR中应答的最小副本数量（min.insyc.replica默认为1）设置为1，和ack=1的效果是一样的，仍会有丢失数据的风险
+
+数据完全可靠的条件
+* ACK的级别设置为-1/all
+* 分区副本大于等于2
+* ISR里应答的最小副本数量大于等于2
+
+生产环境中，如果数据丢失可接受，可以使用ack =1，如果不允许数据丢失，需要设置ack = -1
+```java
+//应答种类,默认就是all
+prop.put(ProducerConfig.ACKS_CONFIG,"all");
+prop.put(ProducerConfig.ACKS_CONFIG,"0");
+//设置producer重试次数，默认为Integer的最大值
+prop.put(ProducerConfig.RETRIES_CONFIG,10);
+```
+### 发送数据的重复问题
+ack = -1 情况下，可能出现数据重复问题：
+> leader接收到数据，且已经同步给follower，在应答时leader宕机，这时集群中发生重新选举，producer没有接受到应答，尝试重新发送数据，新的leader会再次同步发送的数据给follower，出现数据重复的问题
+
+
+数据传递语义：
+* 至少一次 at least once  ：ACK的级别设置为-1/all，分区副本大于等于2，ISR里应答的最小副本数量大于等于2   ---存在重复发送的问题
+* 最多一次 at most once： ack级别设置为0 ---可能丢数据
+* 精确一次 exactly once ： 幂等性 + 至少一次
+
+重复判断标准：具有`<PID,Partition,SeqNumber>`相同主键的消息提交时，broker只会持久化一条数据，其中PID时kafka每次重启时分配的pid，Partition是分区号，SeqNumber 是单调自增的标志
+幂等性只能保证一个会话单分区内不重复
+幂等性的开启
+```java
+//幂等性，默认开启
+prop.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG,true);
+```
+
+
+> 当出现多会话（多个producer时），需要使用kakfa的事务，开启事务必须开启幂等性
+> producer在使用事务之前，必须先自定义一个唯一的transaction_id，这样即使客户端挂掉，它重启后也能继续处理未完成的事务
+事务流程：
+* producer 请求producer id（幂等性需要），向broker的事务协调器（transaction coordinator）
+* 事务处理器发送producer_id
+* producer发送消息到broker
+* producer发送commit请求
+* broker持久化commit请求
+* 事务协调器发送commit请求到topic的leader partition
+* leader 返回成功，持久化事物成功信息到特殊的分区主题
+
+事务的使用
+```java
+   public static void main(String[] args) throws ExecutionException, InterruptedException {
+        Properties prop = new Properties();
+        prop.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,"localhost:9092");
+        //应答种类
+        prop.put(ProducerConfig.ACKS_CONFIG,"all");
+        prop.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        prop.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,StringSerializer.class.getName());
+        prop.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG,true);
+        //设置全局事务唯一id
+        prop.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG,"transaction_id_test_01");
+        KafkaProducer<String,String> kafkaProducer = new KafkaProducer<String, String>(prop);
+        //开启事务
+        kafkaProducer.initTransactions();
+        //启动事务
+        kafkaProducer.beginTransaction();
+        try {
+
+            for (int i = 0; i < 10; i++) {
+//             Future<RecordMetadata> future =
+                kafkaProducer.send(
+                        new ProducerRecord<>("test-topic", null, "hello world,"+ i));
+//            future.get();
+                log.info("第"+i+"条消息");
+            }
+            //提交事务
+            kafkaProducer.commitTransaction();
+        }catch (Exception e){
+            //回滚事务
+            kafkaProducer.abortTransaction();
+        }finally {
+            kafkaProducer.close();
+        }
+    }
+```
+
+### 发送消息的有序性
+由于topic分区，无法保证整个topic范围内的数据有序，只能保证单分区内有序（有条件的有序）
+
+如何保证多分区有序：
+由consumer端取到所有的分区数据，在consumer端进行排序
+
+生产者默认每个broker最多缓存5个请求，由于可能存在数据1，2，4发送成功，而数据3发送失败需要进行重试，会导致数据乱序
+kafka 1.x版本之前，将max.in.flight.requests.per.connection=1，保证缓存请求最多是一个，不会出现乱序
+之后的版本，如果开启了幂等性，max.in.flight.requests.per.connection需要设置为小于等于5，可以保证不回乱序
+当出现上面的数据发送重试时，在kafka集群中会在持久化数据前根据幂等性条件`<PID,Partition,SeqNumber>`判断前面是否有数据未接收，如果有，则等待缺失数据到达再进行排序后持久化
+
+## kafka broker 服务器
+### zookeeper中的存储的kafka数据
+在/broker/topic 节点中存储的时节点的topic、分区、state（leader、ISR信息）
+在/broker/ids存储的是哪些服务器在集群中
+在/consumer 中存储的消费者的信息（最重要的是offset信息）
+在/controller存储辅助选举主节点的信息
+
+### 总体工作流程
+* kafka启动后向zookeeper进行注册
+* 开始选举，broker中的conroller通过抢先向zookeeper的controller中注册自己，最先注册的controller会成为controller leader
+* controller leader会首先监听zookeeper中的/broker/ids节点信息
+* controller leader按这种规则选举partition leader：在ISR中存活为前提，按照AR（kafka分区中副本的统称）中排在前面的优先，controller leader按AR的顺序进行轮询，排在第一位的就是partition leader
+* 将选举结果通知其他节点，其他节点副本从leader同步数据
+* 生产者发送数据，任意broker接受到数据后，首先会和partition leader同步数据，在持久化方面，使用segment（.log，默认1g）存储数据，使用.index文件加快从.log文件查询数据 的速度
+* 当partition leader的broker宕机后，会重新按照前面的分区leader选举规则进行再次选举，从而更新ISR、AR信息
+
+### kafka节点的服役和退役
+* 服役
+设置broker.id
+配置zookeeper服务地址（不需要再单独启动zookeeper服务）
+查询zookeeper上是否已经存在了响应的broker信息
+历史数据迁移（进行负载均衡）：
+创建topic-to-move.json
+```json
+{
+    "topic":[
+        {"topic":"test-topic}
+    ]
+}
+```
+执行计划迁移命令
+```shell
+./bin/kafka-reassign-partitions.sh --bootstrap-server localhost:9092 --topic-to-move-json-file topic-to-move.json --broker-list "0,1,2,3" --generate
+```
+将计划信息拷贝放入json中
+```shell
+./bin/kafka-reassign-partitions.sh --bootstrap-server localhost:9092 --reassignment-json-file  increase-replication-factor.json --broker-list "0,1,2,3" --generate
+```
+
+* 退役(首先考虑数据的安全性)
+> 将数据导入其他节点上（利用上面的kafka-reassign-partitions.sh脚本）
+> 切走要退役节点的流量
+> 执行要退役节点的kafka-server-stop.sh
+```shell
+#将broker ID为3的节点排除
+./bin/kafka-reassign-partitions.sh --bootstrap-server localhost:9092 --topic-to-move-json-file topic-to-move.json --broker-list "0,1,2," --generate
+```
+执行计划
+```shell
+./bin/kafka-reassign-partitions.sh --bootstrap-server localhost:9092 --reassignment-json-file  increase-replication-factor.json --broker-list "0,1,2,3" --generate
+```
+
+
+
+
 
 ## consumer group rebalance机制（再平衡机制）
 > 确保consumer group 下所有的consumer达成一致，分配订阅的topic的每个分区的机制
@@ -182,9 +544,7 @@ m = 分区数量%消费者数量
  prop.put("acks","all");
 ```
 ACKs对副本的影响较大
-> -1/all 所有的副本都写入成功才算写入成功，性能最差
-> 0 不等待broker确认，直接发送下一条数据，性能最高，可能存在数据丢失
-> 1 等待leader副本确认接受后，才会发送下一条数据，性能中等
+
 根据具体的业务场景选择不同的应答机制
 
 为确保小粉着消费的数据是一致的，只能从分区leader读写消息，follower分区只负责同步数据，做热备份

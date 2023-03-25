@@ -3,7 +3,11 @@
 > hadoop： 用于分布式存储和map-reduce计算
 * yarn负责资源和任务管理
 * hdfs负责分布式存储
-* map-reduce负责分布式计算
+* map-reduce负责分布式计算，程序变写比较麻烦
+* hive实现在hadoop上进行结构化处理的组件，存储结构化信息，可以实现将sql转华为mapreduce，将执行结果进行加工返回给用户
+* hive的sql的灵活性不如直接使用mapreduce
+* spark是hadoop上的计算框架，spark是在内存中进行计算的，也提供spark-sql，可以直接编写sql
+
 
 > spark: 为大量数据处理而设计的快速通用设计引擎
 > hive: Hive 是基于 Hadoop 的一个数据仓库工具，可以将结构化的数据文件映射为一张数据库表，并提供 SQL 查询功能，可以将 SQL 语句转换为 MapReduce 任务进行运行。
