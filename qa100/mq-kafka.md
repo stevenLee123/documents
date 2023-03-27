@@ -16,7 +16,7 @@ producer负责将消息放入队列
 consumer负责将消息取出进行处理
 
 kafka broker使用scala实现
-producer和comsumer可以使用java实现
+producer和comsumer使用java实现
 
 ## 两种模式
 点对点模式：
@@ -90,7 +90,10 @@ kafka内部提供了性能测试工具
 ./bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic test-topic --partitions 3 --replication-factor 3
 #查看分区详情
 /bin/kafka-topics.sh --bootstrap-server localhost:9092 --topic test-topic --describe
-Topic: test-topic	Partition: 0	Leader: 0	Replicas: 0	Isr: 0
+Topic: test-topic	TopicId: GlEcZgJkTaWjBeqBiwev2Q	PartitionCount: 3	ReplicationFactor: 1	Configs:
+	Topic: test-topic	Partition: 0	Leader: 0	Replicas(AR): 0	Isr: 0
+	Topic: test-topic	Partition: 1	Leader: 0	Replicas: 0	Isr: 0
+	Topic: test-topic	Partition: 2	Leader: 0	Replicas: 0	Isr: 0
 #修改，指定3个分区，分区只能增加不能减少，不能通过命令行修改副本
 /bin/kafka-topics.sh --bootstrap-server localhost:9092  --topic test-topic --alter --partitions 3
 ```
@@ -159,37 +162,6 @@ hello world
                              new ProducerRecord<>("test-topic", null, "hello world,"+ i)).get(); 
 ```
 
-```java
-//消费者开发
- public static void main(String[] args) {
-        Properties prop = new Properties();
-        prop.put("bootstrap.servers","localhost:9092");
-        //设置消费者组，组名一样的消费者消费的消息是一样的
-        prop.put("group.id","quickstart-events-group");
-        //自动提交offeset
-        prop.put("enable.auto.commit","true");
-        //自动提交时间间隔
-        prop.put("auto.commit.interval.ms","1000");
-        prop.put("key.deserializer","org.apache.kafka.common.serialization.StringDeserializer");
-        prop.put("value.deserializer","org.apache.kafka.common.serialization.StringDeserializer");
-        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(prop);
-        //订阅主题
-        consumer.subscribe(Arrays.asList("quickstart-events"));
-        while(true){
-            //一次拉取一批数据
-            ConsumerRecords<String, String> consumerRecords = consumer.poll(Duration.ofSeconds(5));
-            for (ConsumerRecord<String, String> consumerRecord : consumerRecords) {
-                String topic = consumerRecord.topic();
-                long offset = consumerRecord.offset();
-                String key = consumerRecord.key();
-                String value = consumerRecord.value();
-                log.info("topic:{},offset:{},key:{},value:{}",topic,offset,key,value);
-            }
-        }
-    }
-```
-消费者组的概念：
-一个消费者组中包含多个消费者，一个组中的消费者共同消费kafka中的topic的数据，当组中的消费者挂掉后，kafka会记住消费者消费消息的offset，当消费者再次连接会从offset处再次消费
 
 ## kafka概念
 * zookeeper集群：保存kafka相关元数据，管理协调kafka集群
@@ -466,7 +438,7 @@ kafka 1.x版本之前，将max.in.flight.requests.per.connection=1，保证缓�
 * 开始选举，broker中的conroller通过抢先向zookeeper的controller中注册自己，最先注册的controller会成为controller leader
 * controller leader会首先监听zookeeper中的/broker/ids节点信息
 * controller leader按这种规则选举partition leader：在ISR中存活为前提，按照AR（kafka分区中副本的统称）中排在前面的优先，controller leader按AR的顺序进行轮询，排在第一位的就是partition leader
-* 将选举结果通知其他节点，其他节点副本从leader同步数据
+* 将选举结果写入到zookeeper的树节点下，通知其他节点，其他节点副本从leader同步数据
 * 生产者发送数据，任意broker接受到数据后，首先会和partition leader同步数据，在持久化方面，使用segment（.log，默认1g）存储数据，使用.index文件加快从.log文件查询数据 的速度
 * 当partition leader的broker宕机后，会重新按照前面的分区leader选举规则进行再次选举，从而更新ISR、AR信息
 
@@ -480,7 +452,7 @@ kafka 1.x版本之前，将max.in.flight.requests.per.connection=1，保证缓�
 ```json
 {
     "topic":[
-        {"topic":"test-topic}
+        {"topic":"test-topic"}
     ]
 }
 ```
@@ -506,38 +478,404 @@ kafka 1.x版本之前，将max.in.flight.requests.per.connection=1，保证缓�
 ./bin/kafka-reassign-partitions.sh --bootstrap-server localhost:9092 --reassignment-json-file  increase-replication-factor.json --broker-list "0,1,2,3" --generate
 ```
 
+### kafka的副本
+提高数据可靠性
+默认副本数量是1个，生产环境一般配置2个，保证数据可靠性
+kafka中的副本分为leader和follower，生产者将数据发送给leader，然后follower找到leader进行同步数据
+kafka中生产者消费者读写数据的对象只能是leader，follower只做数据备份
+kafka中分区中所有的副本统称为AR（assigned replicas）
+AR = ISR（in-sync-replica 和leader保持同步的follower集合）+OSR（out-sync-replica 标识follower与leader副本同步是，延迟过多的副本）
+
+### leader选举
+集群中每启动一个broker就会向zookeeper中注册/brokers/ids, leader controller监听/brokers/ids节点变化
+leader controller 选举分区leader，在ISR中存活为前提，从AR中按照顺序选择排在前面的副本作为leader
+当某个broker挂掉后，controller leader监控到节点宕机信息，ISR、AR 更新，会更新/brokers/topics/first/parittion，再次按前面的规则进行选举
+
+### follower故障处理
+LEO （log end offset）：每个副本的最后一个offset，LEO是最新的offset+1（数组的下标从0开始）
+HW （high watermark）： 所有副本最小的leo，消费者能看到的offset是hw
+当follower故障：
+> follower会被从ISR中临时踢出
+> 这期间leader和follower继续接收数据
+> 当故障follower恢复后，follower会读取本地磁盘记录的上次的hw，并将log文件高于hw的部分截取掉，从hw开始向leader进行同步
+> 当该follower的leo大雨等于该partition 的hw，即follower追上leader之后，就可以冲刺你加入ISR
+
+### leader故障处理
+> leader发生故障后，会从ISR中选举出一个新的leader
+> 为保证多个副本之间的一致性，其余follower会先将各自的log文件高于hw的部分截取掉，然后从新的leader处同步数据
+> 只能保证副本之间的数据一致性，不能保证数据丢失或不重复
+
+### 分区副本配置
+考虑负载均衡和数据的安全性，保证分区leader尽量均匀分布在集群中的不同节点上
+**手动调整分区副本**
+考虑4分区两个副本的情况，需要按照服务器新能分配数据存储的位置
+使用命令来实现分区副本的调整
+```shell
+#执行命令
+./bin/kafka-reassign-partitions.sh --bootstrap-server localhost:9092 --reassignment-json-file  increase-replication-factor.json  --execute
+#验证上面的execute是否执行完毕
+./bin/kafka-reassign-partitions.sh --bootstrap-server localhost:9092 --reassignment-json-file  increase-replication-factor.json  --verify
+```
+
+### leader partition负载均衡
+保证partition均匀分布在各个机器上
+可能由于集群中的节点故障导致partition分布不均匀
+可以使用leader.imbalance.per.broker.percentage=10%,当broker中的leader不均匀比例超过10%时会出发leader的均衡机制
+均衡机制检测时间配置leader.imbalance.check.interval.second=300,默认300s
+**一般情况下不建议开启再均衡机制**
+
+### 增加副本因子
+topic在创建以后无法通过--alter来修改topic分区副本数量
+需要手动进行副本的数量修改
+```shell
+./bin/kafka-reassign-partitions.sh --bootstrap-server localhost:9092 --reassignment-json-file  increase-replication-factor.json  --execute
+```
+
+### 数据的文件存储
+topic是逻辑上的概念，而分区partition是物理概念
+每个partition对应一个log文件（虚拟概念），log中的文件是以segment来存储（默认1g），一个partition进行分片，分为多个segment
+每个segment包含.log文件和.index文件（用来索引）和.timeindex(判断日志是否需要进行删除)
+producer的数据会不断追加到segment的末尾，不会进行修改
+.index文件 **稀疏索引**，每4KB文件才会记录一条索引，存储相对offset，即segment的offset，避免索引数据过大
+可以使用kafka 的命令查看具体的.log文件信息
+
+```shell
+./bin/kafka-run-class.sh kafka.tools.DumpLogSegments --files ../../data/kafka/kafka-data1/test-topic-0/00000000000000000000.log
+```
+### 数据文件清除策略
+相关参数配置：
+log.retention.hours 最低优先级小时 默认7天
+log.retention.minutes 分钟
+log.retention.ms 最高优先级ms
+log.retention.check.interval.ms 负责周期检查，默认5分钟检查一次
+
+数据清除策略
+log.cleanup.policy = delete/compact 默认删除
+基于时间的删除：默认打开，以segment中所有记录中的最大时间戳作为该文件的计算删除的时间戳
+基于大小的删除：log.retention.bytes=-1,默认关闭，超过设置的所有日志的总大小，删除最早的segment
+
+compact：对与相同的key不同的value只保留最后一个版本，适合用户信息的迭代更新等场景
+
+### 高效读写数据
+> kafka自身是分布式集群，采用分区技术，并行度高
+> 读取数据采用稀疏索引，可以快读定位到要消费的数据
+> 顺序读写磁盘，producer写入过程是追加数据到log文件末端，顺序写能达到600M/s,省去磁盘寻址的空间
+> 采用页缓存和零拷贝技术（借用linux系统内核的页缓存）
 
 
+## kafka消费者
+kafka的消费者采用的主动拉取pull数据的模式，
+由于采用推送push数据的方式由broker来决定消息的发送速率，使用主动pull数据避免由于未知消费者消费数据的能力而导致推送数据速率和消费速率不匹配导致的问题
+
+### 消费者工作流程
+消费者组：每个分区中的数据只能由消费者组中的一个消费者消费，避免重复消费
+消费记录：使用offset记录，老板本的消费者的offset数据存储在zookeeper上，新版本的维护在系统的__consumer_offset topic上
+由于zookeeper的性能问题，如果所有的消费者offset数据全部存储在zookeeper上，broker需要从zk上取offset，会产生大量的向zk的请求
+
+**消费者组**
+由多个comsumer组成，组内所有的消费者的groupid相同
+* 消费者组内的每个消费者负责消费不同分区的数据，一个分区只能由一个组内消费者消费
+* 消费者组之间互不影响，所有的消费者都属于某个消费者组，即消费者是逻辑上的一个订阅者
+* 当组内消费者大于分区数量时，会出现闲置消费者的情况，闲置消费者不会消费任何消息
+
+### 消费者组初始化流程
+coordinator ：辅助实现消费者组的初始化和分区配置，每个broker节点上都有一个用来处理消费者offset的数据
+coordinator 节点选择 = groupid的hash值%50（__consumer_offsets的分区数量）
+> 消费者组中的consumer都发送joinGroup请求
+> coordinator 收到请求之后，选择一个consumer作为leader
+> 作为leader的consumer制定消费计划，哪个消费者消费哪些分区
+> 消费者定期向coordinator发送心跳确认消费者存活，45s内（session.timeout.ms）未收到消费者心跳，则认为消费者已下线，会触发消费者消费消息再均衡
+> 当消费者处理消息时间过程大于max.poll.interval.mx（默认5分钟），也会触发再均衡
+
+### 消费者消费流程
+> 消费者创建消费者网络连接客户端（ConsumerNetworkClient）,发送消费请求
+> 根据每批次抓起字节数（fetch.min.bytes），默认抓去一个字节，来抓去数据
+> 当字节数未达到上面指定的值，而抓取时间已经到达fetch.max.wait.ms（默认500ms），则也会进行数据的拉去
+> fetch.max.bytes 每批次最大抓取大小，默认50M
+> max.poll.records指定拉取后返回给客户端的批次条数，默认500条
+> 拉取到数据后，会对数据进行反序列化
+> 然后进过拦截器，监控消费数据
+> 最后消费者处理数据
+
+### 消费者代码
+```java
+//消费者开发,订阅主题
+    public static void main(String[] args) {
+        Properties prop = new Properties();
+        prop.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,"localhost:9092");
+        //设置消费者组
+        prop.put(ConsumerConfig.GROUP_ID_CONFIG,"test-topic-group");
+        //自动提交offeset
+        prop.put("enable.auto.commit","true");
+        //自动提交时间间隔
+        prop.put("auto.commit.interval.ms","1000");
+        prop.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,"org.apache.kafka.common.serialization.StringDeserializer");
+        prop.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,"org.apache.kafka.common.serialization.StringDeserializer");
+        KafkaConsumer<String,String> consumer = new KafkaConsumer<String, String>(prop);
+        final ArrayList<String> topic = new ArrayList<>();
+        topic.add("test-topic");
+        consumer.subscribe(topic);
+        //开始消费
+        while (true){
+            ConsumerRecords<String, String> poll = consumer.poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<String,String> record : poll) {
+                log.info("offset:{},topic:{},partition:{},key:{},value:{}",
+                        record.offset(),record.topic(),record.partition(),record.key(),record.value());
+            }
+        }
+    }
+```
+ 订阅topic并指定分区
+```java
+public static void main(String[] args) {
+        Properties prop = new Properties();
+        prop.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,"localhost:9092");
+        //设置消费者组，组名一样的消费者消费的消息是一样的
+        prop.put(ConsumerConfig.GROUP_ID_CONFIG,"test-topic-group");
+        //自动提交offeset
+        prop.put("enable.auto.commit","true");
+        //自动提交时间间隔
+        prop.put("auto.commit.interval.ms","1000");
+        //反序列化
+        prop.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,"org.apache.kafka.common.serialization.StringDeserializer");
+        prop.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,"org.apache.kafka.common.serialization.StringDeserializer");
+        KafkaConsumer<String,String> consumer = new KafkaConsumer<String, String>(prop);
+        //  订阅topic并指定分区
+        final ArrayList<TopicPartition> topicPartitinos = new ArrayList<>();
+        topicPartitinos.add(new TopicPartition("first",0));
+        consumer.assign(topicPartitinos);
+        //开始消费
+        while (true){
+
+            ConsumerRecords<String, String> poll = consumer.poll(Duration.ofSeconds(1));
 
 
-## consumer group rebalance机制（再平衡机制）
-> 确保consumer group 下所有的consumer达成一致，分配订阅的topic的每个分区的机制
-rebalance 触发时机：
-* consumer group中的消费者数量发生变化
-* 订阅主题数据量发生变化
-* 订阅分区发生变化
+            for (ConsumerRecord<String,String> record : poll) {
+                log.info("offset:{},topic:{},partition:{},key:{},value:{}",
+                        record.offset(),record.topic(),record.partition(),record.key(),record.value());
+            }
+        }
+    }
+```
+每个分区到底应该由哪个消费者消费？
 
-> rebalance的不良影响：
-* 发生时，消费者组中的所有消费者都要协同参与，使用分配策略尽可能达到最公平的分配
-* 发生时，所有的消费者都将停止工作，直到rebalance完成
+### 消费者的分区分配策略及再均衡
 
-## 消费者的分区分配策略
-* range范围分配策略（默认分配策略），确保每个消费者消费的分区数量是均衡的。range范围分配是针对每个topic的。
+* range范围分配策略，确保每个消费者消费的分区数量是均衡的。range范围分配是针对每个topic的。
+按消费者字母顺序对消费者排序，按分区号对分区进行排序
+使用以下计算公司进行分区分配
 公式：
 n = 分区数量/消费者数量
 m = 分区数量%消费者数量
 前m个消费者分别消费n+1个分区，
 剩余的消费者分别消费n个
+range方式存在的问题：
+> 当消费组同时订阅多个topic时，可能会导致consumer0消费的数据很大，出现数据倾斜
+> 当某个消费者退出时，45s后它所消费的分区在这45s内接收到的数据会被全部分配给某一个消费者，45s后触发再均衡，然后再重新按上面公式进行分区分配
 * RoundRobin轮训策略
     将消费组内所有的消费者以及消费者所订阅的所有topic的partition按照字典顺序排序（topic和分区的hashcode进行排序）
     通过轮询方式逐个将分区以这种分配分给每个消费者
+> 当某个消费者退出时，45s后它所消费的分区会按照hash+轮询的方式发送给其他消费者
 * stricky黏性分配
     分区分配尽可能均匀
-    在发生rebalance时，走一遍轮询策略，分区的分配尽可能与上一次保持相同，仅将出现变化的分区进行重新分配
+    分配的结果带有粘性，在执行新的分配之前，考虑上一次分配结果，尽量少的调整分配的变动，节省开销
+>  当某个消费者退出时，触发再均衡，会将退出消费者的分区尽量均匀的分配给其他消费者   
+    在发生rebalance时，走一遍轮询策略，分区的分配尽可能与上一次保持相同，仅将出现变化的分区进行重新分配，
     没有发生rebalance时，与轮询分配策略保持一致
 
-## 副本机制
-冗余副本，当某个broker上分区丢失时，依然可以保证数据可用性，其在其他broker上的副本是可用的
+* cooperativeSticky 合作者粘性
+ 
+默认使用range+cooperativesticky两种策略
+
+```java
+//修改分区分配策略
+//指定分区分配策略,策略RoundRobin
+        prop.put(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, RoundRobinAssignor.class.getName());
+        // Sticky
+      //  prop.put(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, StickyAssignor.class.getName());
+        //Range
+        //prop.put(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, RangeAssignor.class.getName());
+        //CooperativeSticky
+        //prop.put(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, CooperativeStickyAssignor.class.getName());
+```
+
+### 自动offset提交机制
+两个参数
+* enable.auto.commit: 是否开启自动提交offset功能，默认true
+* auto.commit.interval.ms ：自动提交offset的时间间隔，默认5s
+```java
+            //自动提交offeset
+//        prop.put("enable.auto.commit","true");
+        prop.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG,"true");
+        //自动提交时间间隔
+    //    prop.put("auto.commit.interval.ms","1000");
+        prop.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG,"1000");
+```   
+**存储位置**     
+0.9版本之后offset存储在__consumer_offset的系统topic中，其中的key为group.id+topic+分区号
+修改consumer.properties配置允许查看系统主题
+exclude.internal.topics = false (默认为true，表示不允许查看系统主题数据)
+
+### 手动提交
+同步提交：必须等待offset提交完毕之后才去消费下一批数据
+```java
+   Properties prop = new Properties();
+        prop.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,"localhost:9092");
+        //设置消费者组，组名一样的消费者消费的消息是一样的
+        prop.put(ConsumerConfig.GROUP_ID_CONFIG,"test-topic-group");
+        //关闭自动提交offeset
+        prop.put("enable.auto.commit","false");
+
+        //自动提交时间间隔
+//        prop.put("auto.commit.interval.ms","1000");
+        //反序列化
+        prop.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,"org.apache.kafka.common.serialization.StringDeserializer");
+        prop.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,"org.apache.kafka.common.serialization.StringDeserializer");
+        KafkaConsumer<String,String> consumer = new KafkaConsumer<String, String>(prop);
+        //订阅topic
+        final ArrayList<String> topic = new ArrayList<>();
+        topic.add("test-topic");
+        consumer.subscribe(topic);
+        //开始消费
+        while (true){
+
+            ConsumerRecords<String, String> poll = consumer.poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<String,String> record : poll) {
+                log.info("offset:{},topic:{},partition:{},key:{},value:{}",
+                        record.offset(),record.topic(),record.partition(),record.key(),record.value());
+            }
+            //手动同步提交
+            consumer.commitSync();
+        }
+    }
+```
+异步提交：发送完offset请求后就开始消费下一批数据
+```java
+            //异步提交
+            consumer.commitAsync();
+```
+
+### 指定offset开始消费
+消费者参数 auto.offset.reset = earliest|latest|none
+earliest:从头开始消费 ，即命令行中的 --from-beginning
+latest(默认值):自动将偏移量重置为最新偏移量
+none：如果未找到消费者组的先前偏移量，则抛出异常
+```java
+  public static void main(String[] args) {
+        Properties prop = new Properties();
+        prop.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,"localhost:9092");
+        //设置消费者组，组名一样的消费者消费的消息是一样的
+        prop.put(ConsumerConfig.GROUP_ID_CONFIG,"test-topic-group");
+        //关闭自动提交offeset
+        prop.put("enable.auto.commit","false");
+
+        //自动提交时间间隔
+//        prop.put("auto.commit.interval.ms","1000");
+        //反序列化
+        prop.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,"org.apache.kafka.common.serialization.StringDeserializer");
+        prop.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,"org.apache.kafka.common.serialization.StringDeserializer");
+        KafkaConsumer<String,String> consumer = new KafkaConsumer<String, String>(prop);
+        //订阅topic
+        final ArrayList<String> topic = new ArrayList<>();
+        topic.add("test-topic");
+        consumer.subscribe(topic);
+        //指定位置进行消费
+        final Set<TopicPartition> assignment = consumer.assignment();
+        //防止分区方案可能还未进行分配情况，先进行数据拉去分配分区，保证分区分配方案已经指定完毕
+        while (assignment.size() == 0){
+            consumer.poll(Duration.ofSeconds(1));
+            assignment =consumer.assignment();
+        }
+        assignment.forEach(ass ->{
+            //指定每个分区都从从offset的位置开始消费
+            consumer.seek(ass,10);
+        });
+        //开始消费
+        while (true){
+            ConsumerRecords<String, String> poll = consumer.poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<String,String> record : poll) {
+                log.info("offset:{},topic:{},partition:{},key:{},value:{}",
+                        record.offset(),record.topic(),record.partition(),record.key(),record.value());
+            }
+            //手动同步提交
+//            consumer.commitSync();
+            //异步提交
+            consumer.commitAsync();
+        }
+    }
+```
+
+### 按指定时间进行消费
+思想：将时间点转化为offset，然后指定该offset进行消费
+```java
+  public static void main(String[] args) {
+        Properties prop = new Properties();
+        prop.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        //设置消费者组，组名一样的消费者消费的消息是一样的
+        prop.put(ConsumerConfig.GROUP_ID_CONFIG, "test-topic-group1");
+        //关闭自动提交offeset
+        prop.put("enable.auto.commit", "false");
+
+        //自动提交时间间隔
+//        prop.put("auto.commit.interval.ms","1000");
+        //反序列化
+        prop.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
+        prop.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
+        KafkaConsumer<String, String> consumer = new KafkaConsumer<String, String>(prop);
+        //订阅topic
+        final ArrayList<String> topic = new ArrayList<>();
+        topic.add("test-topic");
+        consumer.subscribe(topic);
+        //指定位置进行消费
+        Set<TopicPartition> assignment = consumer.assignment();
+        //防止分区方案可能还未进行分配情况，先进行数据拉去分配分区，保证分区分配方案已经指定完毕
+        while (assignment.size() == 0) {
+            consumer.poll(Duration.ofSeconds(1));
+            assignment = consumer.assignment();
+        }
+        //取一天之内的消息数据
+        HashMap<TopicPartition, Long> topicPartitionLongHashMap = new HashMap<>();
+        for (TopicPartition partition : assignment) {
+            //取一天前的offset位置
+            topicPartitionLongHashMap.put(partition,System.currentTimeMillis()-24*3600*1000);
+        }
+        //将时间转为offset
+        Map<TopicPartition, OffsetAndTimestamp> topicPartitionOffsetAndTimestampMap = consumer.offsetsForTimes(topicPartitionLongHashMap);
+        assignment.forEach(partition -> {
+            //指定从指定的每个分区从offset的位置开始消费
+            consumer.seek(partition, topicPartitionOffsetAndTimestampMap.get(partition).offset());
+        });
+        //开始消费
+        while (true) {
+            ConsumerRecords<String, String> poll = consumer.poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<String, String> record : poll) {
+                log.info("offset:{},topic:{},partition:{},key:{},value:{}",
+                        record.offset(), record.topic(), record.partition(), record.key(), record.value());
+            }
+            //手动同步提交
+//            consumer.commitSync();
+            //异步提交
+            consumer.commitAsync();
+        }
+    }
+```
+
+### 漏消费与重复消费
+**重复消费**
+1. 由于自动提交，可能是多个消息消费之后做一次整体的提交，提交的offset是连续的已消费数据的最后一个offset，可能出现由于0，1，2，3，4数据成功收到，但是此时consumer挂掉，可能这一批数据的offset还未来得及提交导致下次重启还是会重新消费0，1，2，3，4
+
+**漏消费：**
+设置offset手动提交，数据已经被consumer取到，这时consumer已经提交了offset，但是数据还未做相应的逻辑处理，此时consumer挂掉，下次重启时会从offset处开始消费，导致数据漏消费
+
+解决方案：使用事务，将kafka 的消费过程和提交offset过程做原子保定
+
+### 数据积压
+如何提高消费者吞吐量
+1. 如果是消费者消费能力不足可以考虑增加分区，增加消费者的数量和CPU核心数（消费者数 = 分区数）
+2. 如果是下游数据处理不及时，提高每批次拉取的数据量，可以修改一次拉取数据条数（默认500条）和最大的数量（默认50M）
+
+
+
 
 ### producer的ACKs参数
 ```java
