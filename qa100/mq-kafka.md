@@ -671,7 +671,7 @@ m = 分区数量%消费者数量
 剩余的消费者分别消费n个
 range方式存在的问题：
 > 当消费组同时订阅多个topic时，可能会导致consumer0消费的数据很大，出现数据倾斜
-> 当某个消费者退出时，45s后它所消费的分区在这45s内接收到的数据会被全部分配给某一个消费者，45s后触发再均衡，然后再重新按上面公式进行分区分配
+> 当某个消费者退出时，它所消费的分区在这45s内接收到的数据会被全部分配给某一个消费者，45s后触发再均衡，然后再重新按上面公式进行分区分配
 * RoundRobin轮训策略
     将消费组内所有的消费者以及消费者所订阅的所有topic的partition按照字典顺序排序（topic和分区的hashcode进行排序）
     通过轮询方式逐个将分区以这种分配分给每个消费者
@@ -713,6 +713,7 @@ range方式存在的问题：
 ```   
 **存储位置**     
 0.9版本之后offset存储在__consumer_offset的系统topic中，其中的key为group.id+topic+分区号
+由于存储在zk中会受限于zk的性能，导致集群性能受到限制
 修改consumer.properties配置允许查看系统主题
 exclude.internal.topics = false (默认为true，表示不允许查看系统主题数据)
 
@@ -755,7 +756,7 @@ exclude.internal.topics = false (默认为true，表示不允许查看系统主�
             consumer.commitAsync();
 ```
 
-### 指定offset开始消费
+### 指定offset开始消费 seek消费
 消费者参数 auto.offset.reset = earliest|latest|none
 earliest:从头开始消费 ，即命令行中的 --from-beginning
 latest(默认值):自动将偏移量重置为最新偏移量
@@ -868,12 +869,196 @@ none：如果未找到消费者组的先前偏移量，则抛出异常
 设置offset手动提交，数据已经被consumer取到，这时consumer已经提交了offset，但是数据还未做相应的逻辑处理，此时consumer挂掉，下次重启时会从offset处开始消费，导致数据漏消费
 
 解决方案：使用事务，将kafka 的消费过程和提交offset过程做原子保定
+可以使用mysql 的事务
 
 ### 数据积压
 如何提高消费者吞吐量
 1. 如果是消费者消费能力不足可以考虑增加分区，增加消费者的数量和CPU核心数（消费者数 = 分区数）
 2. 如果是下游数据处理不及时，提高每批次拉取的数据量，可以修改一次拉取数据条数（默认500条）和最大的数量（默认50M）
 
+## kafka监控
+使用kafka eagle实现监控
+* 安装mysql
+* 修改kakfa默认内存，从1G修改成2G，从kafka-server-start.sh中修改 -Xmx2G -Xms2G
+```shell
+if [ "x$KAFKA_HEAP_OPTS" = "x" ]; then
+    export KAFKA_HEAP_OPTS="-Xmx2G -Xms2G"
+fi
+```
+* 修改kafka eagle 配置文件system-config.properties
+```shell
+efak.zk.cluster.alias=cluster1
+cluster1.zk.list=localhost:2181/kafka
+cluster1.efak.offset.storage=kafka
+```
+
+* 配置kafka eagle环境变量
+```shell
+export KE_HOME=/Users/lijie3/Documents/tool-package/kafka-eagle-bin-3.0.1/efak-web-3.0.1
+export PATH=$PATH:$KE_HOME/bin
+```
+* 配置mysql连接信息
+
+
+## kafka kraft模式
+> 2.8.0之后kafka可以不依赖zookeeper部署
+> 配置文件在conf/kraft目录下
+> 启动时需要进行初始化 ,每个节点都要执行
+```shell
+./bin/kafka-storage.sh random-uuid fsafsadf -c config/kraft/server.properties
+```
+> 接着启动集群
+```shell
+./bin/kafka-server-start.sh config/kraft/server.properties
+```
+## 外部系统集成
+### 集成flume
+集成架构
+flume作为生产者
+日志文件 --》 flume（client ->memorychannel-> sink）  --》 kafka
+
+flume作为消费者
+生产者 --》kafka --》 kafkasource--》memorychannel --》logger--》下游
+flume :cloudera 开发的实时日志收集系统
+一个分布式、可靠、和高可用的海量日志采集、聚合和传输的系统。支持在日志系统中定制各类数据发送方，用于收集数据;同时，Flume提供对数据进行简单处理，并写到各种数据接受方(比如文本、HDFS、Hbase等)的能力 。flume的数据流由事件(Event)贯穿始终。事件是Flume的基本数据单位，它携带日志数据(字节数组形式)并且携带有头信息，这些Event由Agent外部的Source生成，当Source捕获事件后会进行特定的格式化，然后Source会把事件推入(单个或多个)Channel中。你可以把Channel看作是一个缓冲区，它将保存事件直到Sink处理完该事件。Sink负责持久化日志或者把事件推向另一个Source。
+flume的概念
+* Client：Client生产数据，运行在一个独立的线程。
+* Event： 一个数据单元，消息头和消息体组成。（Events可以是日志记录、 avro 对象等。）
+* Flow： Event从源点到达目的点的迁移的抽象。
+* Agent： 一个独立的Flume进程，包含组件Source、 Channel、 Sink。（Agent使用JVM 运行Flume。每台机器运行一个agent，但是可以在一个agent中包含多个sources和sinks。）
+* Source： 数据收集组件。（source从Client收集数据，传递给Channel）
+* Channel： 中转Event的一个临时存储，保存由Source组件传递过来的Event。（Channel连接 sources 和 sinks ，这个有点像一个队列。）
+* Sink： 从Channel中读取并移除Event， 将Event传递到FlowPipeline中的下一个Agent（如果有的话）（Sink从Channel收集数据，运行在一个独立线程。）
+
+### 集成flink
+集成架构
+flink作为生产者
+
+flink作为消费者
+
+### 集成springboot
+使用Spring 提供的`KafkaTemplate<String,String>`操作kafka
+```yml
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+    consumer:
+      group-id: test-topic-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      enable-auto-commit: true
+```
+```java
+//生产者
+   @Autowired
+    KafkaTemplate<String,String> kafkaTemplate;
+
+    @PostMapping("/send")
+    public String send(String msg){
+        kafkaTemplate.send("test-topic",msg);
+        return "OK";
+    }
+
+//消费者
+@Configuration
+public class ConsumerController {
+
+    @KafkaListener(topics = "test-topic")
+    public void consumerTopic(String msg){
+
+        System.out.println("receive msg :"+ msg);
+    }
+}
+```
+
+### 集成spark
+spark作为生产者
+
+spark作为消费者
+
+## kafka调优
+总体：
+1. 提高生产吞吐量
+2. 增加分区
+3. 提高消费者吞吐量
+4. 数据精准一次（生产者角度 事务+幂等性 + broker角度（分区副本数大于2，ISR副本数大于2）+ 消费者角度（事务+手动提交，消费者输出的目的地必须支持事务）
+5. 合理设置分区数 分区数一般设置为3-10个
+6. 对与单条日志大于1M，
+   kafka broker默认处理单条数据（message.max.bytes = 1M）可以改成更大 10M
+   生产者发到broker每个请求消息的最大值 ，默认max.request.size = 1M
+   副本同步数据，每个批次消息最大值 默认reolica.fetch.max.bytes = 1M
+    消费者获取一批消息最大的字节数，fetch.max.bytes = 50M  ，大于50M依然可以拉取回来，broker端的一批次大小受message.max.bytes或max.message.bytes的影响
+7.  服务器挂了的排查（重启、查看内存情况、cpu情况、网络带宽）
+
+
+### 硬件配置选择
+100万日活，每人每天100条日志=1亿条日志
+处理日志的速度：
+1亿/24/3600s = 1150条/s
+1条日志（0.5k-2k）,按1k计算
+1150 * 1k/s = 1M/s
+高峰值：
+中午小高峰，晚上8-12 ，按20倍算 20M/s-40M/s
+
+1. 购买多少服务器：
+服务器台数 = 2* （生产者峰值生产速率 * 副本数量/100） + 1
+2 *（20*2/100）+1 
+一般选择3台
+2. 磁盘选择
+kafka 按照顺序读写，选择机械硬盘和固态硬盘的读写速度差不多
+3台服务器大于1t硬盘
+3. 内存选择
+   kakfa 内存 = 堆内存（kafka内部配置） + 页缓存（服务器内存）
+            =  10G~15G +   1G
+            = 15G
+4. cpu选择
+    负责写磁盘的线程数（num.io.threads=8） 负责写磁盘线程数
+    副本拉取线程数据 num.replica.fetcher = 1
+    数据传输线程数 num.network.threads = 3
+    建议32个cpu核心
+5. 网络
+    选择千兆网卡，选择百兆带宽明月12.5M/s
+
+
+### 生产者调优
+主要是对生产者的配置参数进行配置
+batch.size 只有数据累计到指定大小才会发送，默认16k
+buffer.memory 缓冲区大小默认32M
+如果要保证所有分区的有序性，建议在topic只做一个分区，或是在consumer进行排序
+
+### 消费者调优
+
+### broker调优
+对broker的各种参数进行调优
+禁止自动创建主题(修改配置参数auto.create.topic.enable = false)
+
+### 压力测试
+
+压力测试工具：
+kafka-producer-perf-test.sh
+
+```shell
+./bin/kafka-producer-perf-test.sh --topic test-topic --record-size 1024 --num-records 1000000  --throughput 1000 --producer-props bootstrap.servers=localhost:9092 batch.size=16384  linger.ms=0 compression.type=snappy buffer.memory=67108864
+
+--record-size 1024  (一条数据的大小1M ) 
+--num-records 1000000 （测试数据量）
+--throughput 1000 （吞吐量）
+batch.size=16384 (一批数据量16k)
+linger.ms=0 数据发送不延迟
+compression.type=snappy/zstd/gzip/lz4 压缩方式
+buffer.memory=67108864 缓冲区大小，64M
+```
+
+kafka-consumer-perf-test.sh
+```shell
+./bin/kafka-producer-perf-test.sh --bootstrap.server=localhost:9092 --topic test-topic --messages 100000 --consumer.config config/consumer.properties 
+max.poll.records = 500 --默认拉取最大条数默认500
+fetch.max.bytes = 50M --每批次抓取数据大小默认 50M
+```
 
 
 

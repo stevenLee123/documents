@@ -8,7 +8,6 @@
 > es 通过分词提高了查询的效率，关系型数据库的查询性能比es差很多
 > mysql 查询功能弱，模糊查询会导致全表扫描
 > es不具有事务性，没有外键，不能向mysql一样保证数据的安全性
-> 
 
 
 * 倒排索引：将一段文本按照一定的规则拆分成不同的词条（term），记录词条和文本之间的关系
@@ -43,7 +42,7 @@ es中最小的数据单元，常以json格式展示，一个document相当于关
 一个倒排索引由文档中所有不重复的列表构成，对与其中的每个词，对应都包含她的文档id列表
 
 * 类型 type
-一种类型type就像一类表，入用户表，角色表
+一种类型type就像一类表，如用户表，角色表
 es7后逐渐淘汰了type
 
 ## elasticSearch操作
@@ -51,7 +50,9 @@ es7后逐渐淘汰了type
 
 **索引操作**
 添加
-``` curl --location --request PUT 'http://127.0.0.1:9200/goods_index' ```
+``` 
+curl --location --request PUT 'http://127.0.0.1:9200/goods_index' 
+```
 ```
 {
     "acknowledged": true,
@@ -59,8 +60,12 @@ es7后逐渐淘汰了type
     "index": "goods_index"
 }
 ```
+
 查找（多个用,分割）
-``` curl --location --request GET http://127.0.0.1:9200/goods_index```
+``` 
+curl --location --request GET http://127.0.0.1:9200/goods_index
+```
+--结果
 ```
 {
     "goods_index": {
@@ -89,7 +94,10 @@ es7后逐渐淘汰了type
 }
 ```
 查询全部
-``` curl --location --request GET http://127.0.0.1:9200/_all```
+``` 
+curl --location --request GET http://127.0.0.1:9200/_all
+```
+--结果
 ```
 {
     "goods_index": {
@@ -141,14 +149,20 @@ es7后逐渐淘汰了type
 }
 ```
 删除
-``` curl --location --request DELETE http://127.0.0.1:9200/goods_index2```
+``` 
+curl --location --request DELETE http://127.0.0.1:9200/goods_index2
+```
+--结果
 ```
 {
     "acknowledged": true
 }
 ```
 关闭(关闭后客户端可查询但不可添加数据)
-``` curl --location --request POST  http://127.0.0.1:9200/goods_index2/_close```
+``` 
+curl --location --request POST  http://127.0.0.1:9200/goods_index2/_close
+```
+--结果
 ```
 {
     "acknowledged": true,
@@ -161,11 +175,15 @@ es7后逐渐淘汰了type
 }
 ```
 打开
-``` curl --location --request POST http://127.0.0.1:9200/goods_index2/_open```
+``` 
+curl --location --request POST http://127.0.0.1:9200/goods_index2/_open
+
+--结果
 {
     "acknowledged": true,
     "shards_acknowledged": true
 }
+```
 
 **mapping 操作**
 #### 数据类型
@@ -370,6 +388,7 @@ POST person/_doc
 ```
 查询文档
 根据id查询
+```json
 GET person/_doc/1
 --结果
 {
@@ -385,8 +404,10 @@ GET person/_doc/1
     "address" : "beijing"
   }
 }
+```
 
-查询所有文档
+查询所有文档(文档过多时只会给出部分文档进行展示)
+```json
 GET person/_search
 --结果
 {
@@ -438,9 +459,11 @@ GET person/_search
     ]
   }
 }
+```
 
 
 修改文档
+```json
 PUT person/_doc/2
 {
   "name":"wangwu",
@@ -461,8 +484,10 @@ PUT person/_doc/2
   "_seq_no" : 3,
   "_primary_term" : 1
 }
+```
 
 删除文档
+```json
 DELETE person/_doc/rlrcDocB0iSM-C068bkJ
 --结果
 {
@@ -478,6 +503,7 @@ DELETE person/_doc/rlrcDocB0iSM-C068bkJ
   "_seq_no" : 4,
   "_primary_term" : 1
 }
+```
 
 ## 分词器analyzer 
 将一段文本，按照一定的逻辑，分析称多个词语的一种工具
@@ -487,7 +513,7 @@ Stop Analyzer
 language 提供30多种常见语言的分词器
 ····
  *es内置分词器对中文不够友好，按一个字一个字进行分词*
-
+```json
  GET _analyze
 {
   "analyzer":"standard",
@@ -527,7 +553,9 @@ language 提供30多种常见语言的分词器
     }
   ]
 }
+```
 
+```json
 GET _analyze
 {
   "analyzer":"standard",
@@ -560,17 +588,19 @@ GET _analyze
     }
   ]
 }
+```
 ### 使用IK分词器
 安装中文分词器插件
 ikanalyzer是基于java开发的轻量级中文分词工具包
 基于maven构建
 支持60万字/s的高速处理能力
 
-安装： 针对es版本在github上下载对应的ik分词器
+安装： 针对es版本在github上下载对应的ik分词器,解压文件放入plugins/ik目录下
 
 ik的两种模式：
 ik_max_word: 做最细粒度的拆分
 ik_smart: 智能模式
+```json
 GET _analyze
 {
   "analyzer":"ik_max_word",
@@ -616,7 +646,8 @@ GET _analyze
     }
   ]
 }
-
+```
+```json
 GET _analyze
 {
   "analyzer":"ik_smart",
@@ -649,10 +680,11 @@ GET _analyze
     }
   ]
 }
-
-查询文档
+```
+### 查询文档
 
 词条查询： term，词条查询不会拆分查询条件，只有当词条和查询字符串完全匹配是才会匹配搜索
+```json
 PUT person/_doc/5
 {
   
@@ -668,6 +700,8 @@ PUT person/_doc/6
   "address":"北京"
 }
 
+```
+```json
 GET person/_search
 {
   "query": {
@@ -678,6 +712,7 @@ GET person/_search
     }
   }
 }
+
 -普配不出任何结果，这是因为创建的索引使用的是默认的分词器standard，会对汉字一个字一个字进行分词
 {
   "took" : 0,
@@ -697,8 +732,10 @@ GET person/_search
     "hits" : [ ]
   }
 }
+```
 
 --创建索引指定mapping和分词器
+```json
 PUT person
 {
   "mappings": 
@@ -712,13 +749,14 @@ PUT person
     },
     "address":{
       "type":"text",
-      # 为字段指定分词器，使用细粒度的ik分词
+      // 为字段指定分词器，使用细粒度的ik分词
       "analyzer": "ik_max_word"
     }
   }
 }
 }
-
+```
+```json
 插入数据后，再次查询：
 GET person/_search
 {
@@ -771,15 +809,16 @@ GET person/_search
     ]
   }
 }
+```
 
 全文查询： match，全文查询会分析查询条件，先将条件进行分词，然后查询，
 先对查询条件字符串分词，然后再查询求交集
-
+```json
 GET person/_search
 {
   "query": {
     "match": {
-        #注意这里没有value，使用value时报错
+        //注意这里没有value，使用value时报错
       "address": "北京海淀"
       
     }
@@ -825,6 +864,7 @@ GET person/_search
     ]
   }
 }
+```
 
 ## java api
 
@@ -881,7 +921,7 @@ public class ElasticConfig {
 elastic:
   host: 127.0.0.1
   port: 6379
-  ```
+```
 ### 简单操作
 创建索引
 
@@ -912,9 +952,9 @@ elastic:
         System.out.println(createIndexResponse.isAcknowledged());
     }
 ```
+
 查询索引
 ```java
-
     @Test
     public void queryIndex() throws IOException {
         IndicesClient indices = client.indices();
