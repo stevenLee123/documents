@@ -17,4 +17,89 @@
 * 稀疏：对为空的列不占用存储空间，表可以设计的非常稀疏
 
 ## 应用场景
-* 对象存储
+* 对象存储  
+各种新闻、网页、图片等
+* 时序数据
+有一个openTSDB模块，满足时许类场景需求
+* 推荐画像
+  用户画像，一个比较大的稀疏矩阵，蚂蚁金服的疯狂就是在hbase上构建
+* 时空数据
+  轨迹，气象，卫星类数据
+* Cubedb OLAP
+  kylin是一个cube分析工具，底层数据存储在hbase上
+* 消息/订单
+  电商，银行领域很多订单查询底层的存储，通信，消息同步应用构建在Hbase上
+* Feeds流
+  类似朋友圈的应用
+* newSql
+    phoneix（查询引擎）的插件，可以满足二级索引，sql的需求，对接产痛数据需要sql非事务的需求
+* 海量数据备份，存储爬虫数据，短网址（视频网址）
+
+## hbase的特点
+* NoSQL
+* 强一致性读、写
+    * hbase不是最终一致性的数据存储
+    * 非常适合如高速计算、聚合等任务 
+* 自动分块
+    * habse通过region分布在集群上，随着数据增长，区域被自动拆分和重新分布
+* 自动RegionServer故障转移
+* hadoop/hdfs集成
+    * hbase支持hdfs开箱即用
+* mapreduce
+    * 通过mapreduce支持大规模并行处理，将hbase作为源和接收器
+* thrift /REST api
+* 块缓存和布隆过滤器
+* 运行管理
+* 不支持ACID，支持单行数据的事务操作
+* 因为不支持join，不适合做数仓
+* 支持数据更新
+
+与rdbms 的比较
+* 数据库以表形式存在，支持fat，ntfs，ext文件系统，使用主键，通过外部中间件可以支持分库分表，底层单机引擎，使用行列单元格存储数据，面向行查询，支持事务，具备acid，支持join，面向OLTP
+
+* 联机事务处理OLTP（on-line transaction processing） 传统的关系型数据库的主要应用，主要是基本的、日常的事务处理，例如银行交易
+* 联机分析处理OLAP（On-Line Analytical Processing） 数据仓库系统的主要应用，支持复杂的分析操作，侧重决策支持，并且提供直观易懂的查询结果。
+## hbase的结构
+* 主要面向OLTP，不适合做大规模的OLAP
+* 支持hdfs文件系统
+* 以表方式存储
+* 使用行健（rowkey）
+* 原生支持分布式存储，计算引擎
+* 使用行，列，列族和单元格
+* 文件类型称为storeFiles
+
+
+## hbase安装
+修改conf/hbase-env.sh
+配置javahome目录
+配置HBASE_MANAGES_ZK=false
+```shell
+export JAVA_HOME=/export/server/jdk1.8.0_131
+export HBASE_MANAGES_ZK=false
+```
+配置hbase-site.xml
+```xml
+<property>
+<name>hbase.rootdir</name>
+<value>hdfs://node1:8020/hbase</value>
+</property>
+<property>
+<name>hbase.cluster.distributed</name>
+<value>true</value>
+</property>
+<property>
+<name>hbase.master</name>
+<value>hdfs://host1:60000</value>
+</property>
+
+<property>
+<name>hbase.zookeeper.quorum</name>
+<value>host1,host2,host3</value>
+<description>Comma separated list of servers in the ZooKeeper Quorum. For example, "host1.mydomain.com,host2.mydomain.com,host3.mydomain.com". By default this is set to localhost for local and pseudo-distributed modes of operation. For a fully-distributed setup, this should be set to a full list of ZooKeeper quorum servers. If HBASE_MANAGES_ZK is set in hbase-env.sh this is the list of servers which we will start/stop ZooKeeper on. </description>
+</property>
+<property>
+<name>hbase.zookeeper.property.dataDir</name>
+<value>/home/zookeeper</value>
+<description>Property from ZooKeeper's config zoo.cfg. The directory where the snapshot is stored. </description>
+</property>
+```
