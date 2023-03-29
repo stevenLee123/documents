@@ -68,6 +68,35 @@
 * 使用行，列，列族和单元格
 * 文件类型称为storeFiles
 
+## 安装zookeeper
+1. 修改配置文件
+```shell
+#指定数据目录
+dataDir=/export/data/zk/data
+#指定集群信息
+server.1=node1:2888:3888
+server.2=node2:2888:3888
+server.3=node3:2888:3888
+
+```
+创建 myid文件
+```shell
+#根据上面的server信息分别指定节点名称1，2，3
+echo 3 > /export/data/zk/data/myid
+```
+配置环境变量
+```shell
+export ZK_HOME=/export/server/apache-zookeeper-3.8.1-bin
+export PATH=$PATH:$ZK_HOME/bin
+```
+各个节点上分别启动zkserver
+```shell
+zkServer.sh start
+#查看状态
+zkServer.sh status
+#停止集群
+zkServer.sh stop
+```
 
 ## hbase安装
 修改conf/hbase-env.sh
@@ -78,6 +107,12 @@ export JAVA_HOME=/export/server/jdk1.8.0_131
 export HBASE_MANAGES_ZK=false
 ```
 配置hbase-site.xml
+1. 指定hdfs路径
+2. 指定hbase为分布式模式
+3. 指定hbase master
+4. 指定zk集群
+5. zk数据目录
+6. 兼容性检查
 ```xml
 <property>
 <name>hbase.rootdir</name>
@@ -87,19 +122,29 @@ export HBASE_MANAGES_ZK=false
 <name>hbase.cluster.distributed</name>
 <value>true</value>
 </property>
-<property>
-<name>hbase.master</name>
-<value>hdfs://host1:60000</value>
-</property>
 
 <property>
 <name>hbase.zookeeper.quorum</name>
-<value>host1,host2,host3</value>
+<value>node1,node2,node3</value>
 <description>Comma separated list of servers in the ZooKeeper Quorum. For example, "host1.mydomain.com,host2.mydomain.com,host3.mydomain.com". By default this is set to localhost for local and pseudo-distributed modes of operation. For a fully-distributed setup, this should be set to a full list of ZooKeeper quorum servers. If HBASE_MANAGES_ZK is set in hbase-env.sh this is the list of servers which we will start/stop ZooKeeper on. </description>
 </property>
 <property>
 <name>hbase.zookeeper.property.dataDir</name>
-<value>/home/zookeeper</value>
+<value>/export/data/zk/data</value>
 <description>Property from ZooKeeper's config zoo.cfg. The directory where the snapshot is stored. </description>
 </property>
+<property>
+<name>hbase.unsafe.stream.capability.enforce</name>
+<value>false</value>
+</property>
 ```
+配置环境变量
+```shell
+export HBASE_HOME=/export/server/hbase-3.0.0-alpha-3
+export PATH=$PATH:$HBASE_HOME/bin
+```
+拷贝jar包
+```shell
+ cp lib/client-facing-thirdparty/htrace-core4-4.1.0-incubating.jar lib
+```
+修改conf/regionservers文件，指定server列表
