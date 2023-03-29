@@ -2,11 +2,24 @@
 ## 基本工具描述
 > hadoop： 用于分布式存储和map-reduce计算
 * yarn负责资源和任务管理
-* hdfs负责分布式存储
+* hdfs负责分布式存储,重点是数据访问的高吞吐量而不是数据访问的低延迟
 * map-reduce负责分布式计算，程序变写比较麻烦
-* hive实现在hadoop上进行结构化处理的组件，存储结构化信息，可以实现将sql转华为mapreduce，将执行结果进行加工返回给用户
+* hbase 一个在hdfs上开发的面向列的分布式NoSql数据库，不支持sql，使用zk提供稳定服务和failover机制，属于结构化存储层
+* hive实现在hadoop上进行结构化处理的组件，存储结构化信息，可以实现将sql转华为mapreduce，将执行结果进行加工返回给用户，高延迟，结构化，面向分析，用作数据仓库
 * hive的sql的灵活性不如直接使用mapreduce
 * spark是hadoop上的计算框架，spark是在内存中进行计算的，也提供spark-sql，可以直接编写sql
+* Kerberos 是一种身份认证协议，被广泛运用在大数据生态中，甚至可以说是大数据身份认证的事实标准。
+* Delta Lake 数据湖，Parquet文件 + Meta 文件 + 一组操作的API = Delta Lake，依附于计算引擎的。目前只支持Spark引擎。
+
+常见容错机制
+1. failover: 失效转移
+> Fail-Over的含义为“失效转移”，是一种备份操作模式，当主要组件异常时，其功能转移到备份组件。其要点在于有主有备，且主故障时备可启用，并设置为主。如Mysql的双Master模式，当正在使用的Master出现故障时，可以拿备Master做主使用，大数据的几乎所有组件都具备failover机制
+2. failfast：快速失败
+> 从字面含义看就是“快速失败”，尽可能的发现系统中的错误，使系统能够按照事先设定好的错误的流程执行，对应的方式是“fault-tolerant（错误容忍）”。以JAVA集合（Collection）的快速失败为例，当多个线程对同一个集合的内容进行操作时，就可能会产生fail-fast事件。例如：当某一个线程A通过iterator去遍历某集合的过程中，若该集合的内容被其他线程所改变了；那么线程A访问集合时，就会抛出ConcurrentModificationException异常（发现错误执行设定好的错误的流程），产生fail-fast事件。
+3. failback:失效自动回复
+> Fail-over之后的自动恢复，在簇网络系统（有两台或多台服务器互联的网络）中，由于要某台服务器进行维修，需要网络资源和服务暂时重定向到备用系统。在此之后将网络资源和服务器恢复为由原始主机提供的过程，称为自动恢复
+4. fialsage:失效安全
+> Fail-Safe的含义为“失效安全”，即使在故障的情况下也不会造成伤害或者尽量减少伤害。维基百科上一个形象的例子是红绿灯的“冲突监测模块”当监测到错误或者冲突的信号时会将十字路口的红绿灯变为闪烁错误模式，而不是全部显示为绿灯。
 
 
 > spark: 为大量数据处理而设计的快速通用设计引擎
@@ -216,7 +229,7 @@ stop-all.sh
 > 查看集群的日志
 
 工具web网页
-http://node1:9870/explorer.html#/  --hdfs集群总览
+http://node1:9870/explorer.html#/  --hdfs集群总览,nodenode默认web访问地址
 http://node1:8088/cluster ---查看yarn集群
 
 
@@ -280,7 +293,7 @@ hdfs 角色职责
              内部通过内存和磁盘文件保证数据安全
              存在单点故障，需要配置大量内存
 * datanode： 负责具体的数据块存储，决定数据的存储能力，需要向namenode汇报块列表信息，需要配置大量的磁盘空间
-* Secondarynamenode： 充当namenode的辅助节点，不能代替namenode，帮助namenode进行元数据文件的合并动作（秘书）
+* Secondarynamenode： 充当namenode的辅助节点，不能代替namenode，帮助namenode进行元数据文件的合并动作,定期合并 fsimage 和 edits log 文件，并将 edits log 大小保持在一个限制内。
 
 hdfs写数据流程
 **pipeline管道**

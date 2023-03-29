@@ -24,3 +24,10 @@ passwd test
 ## 授权
 修改文件所有者
 chown -R test:root mysql/*
+
+## scp 方便的在linux机器之间复制文件
+前提条件：linux机器之间配置ssh免密登陆
+scp -r test.text root@node2:/tmp/
+
+## 检查xml文件内容是否正确
+xmllint -noout conf/hbase-site.xml

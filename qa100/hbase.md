@@ -148,3 +148,15 @@ export PATH=$PATH:$HBASE_HOME/bin
  cp lib/client-facing-thirdparty/htrace-core4-4.1.0-incubating.jar lib
 ```
 修改conf/regionservers文件，指定server列表
+
+启停hbase
+```shell
+./bin/start-hbase.sh
+./bin/stop-hbase.sh
+```
+shell连接hbase
+```shell
+./bin/hbase shell
+# 退出hbase shell
+hbase:013:0> quit
+```
