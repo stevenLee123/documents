@@ -135,9 +135,10 @@ export HBASE_MANAGES_ZK=false
 <value>/export/data/zk/data</value>
 <description>Property from ZooKeeper's config zoo.cfg. The directory where the snapshot is stored. </description>
 </property>
+<!-- 与web ui访问有关的配置 -->
 <property>
-<name>hbase.unsafe.stream.capability.enforce</name>
-<value>false</value>
+  <name>hbase.unsafe.stream.capability.enforce</name>
+  <value>false</value>
 </property>
 ```
 配置环境变量
@@ -162,6 +163,62 @@ shell连接hbase
 # 退出hbase shell
 hbase:013:0> quit
 ```
+**注意，以上部署由于各个hbase和hadoop的版本问题，可能出现某些不可预料的问题**
+1. hdfs 集群启动正常，使用start-hbase.sh启动集群时，可能由于jar包的冲突导致hbase集群启动失败，解决方案：
+    *  删除 hbase种的slf4j-log4j12-1.7.25.jar包 该文件存储在 hbase/lib/client-facing-thirdparty/路径下删除即可
+    * 打开hbase-env.sh 的export HBASE_DISABLE_HADOOP_CLASSPATH_LOOKUP="true"选项，启动时告诉HBase是否应该包含Hadoop的lib
+2. 到官网上查找hadoop和hdfs的版本兼容列表，选择兼容的版本进行安装
+3. 16010端口的web ui打不开问题：hbase-site.xml加上下面的配置 (http://192.168.10.101:16010/master-status)
+```xml
+<property>
+  <name>hbase.unsafe.stream.capability.enforce</name>
+  <value>false</value>
+</property>
+```
+集群统一启停命令
+```shell
+start-hbase.sh
+#注意关闭时在master的节点上关闭
+stop-hbase.sh
+```
+
+
+
+**高可用配置**
+在conf下添加backup-masters,里面指定要设置为备用master的节点
+
+```
+node2
+node3
+```
+
+habse shell的使用
+
+
+dml ：操作数据
+namespace：  
+`create_namespace bigdata`
+`update_namespace`
+`list_namespace`
+
+ddl ：操作表格
+`list` 查看表格列表
+`create 'student','info','msg' `创建表格
+`create 'bigdata:person',{NAME => 'info', VERSIONS => 5},{NAME => 'msg', VERSIONS => 5}` 指定namespace和维护的版本号个数
+` describe 'bigdata:person'` 查看表信息
+`alter 'bigdata:person',  NAME => 'info', VERSIONS => 10` 修改列族
+`alter 'student', 'delete' => 'info'` 删除列族
+`disable 'student'` disable 表，删除前必须操作
+`drop 'student'` 删除表
+
+
+`put 'bigdata:student','1003','info:name','zhaosi'` 写入数据，允许在列族下增加列
+`get 'bigdata:student','1001'` 查询数据
+`get 'bigdata:student','1003' , {COLUMN => 'info:name' }` 查询具体字段
+`scan 'bigdata:student'` scan扫描
+` scan 'bigdata:student',{STARTROW => '1001',STOPROW => '1004'}` 左闭右开扫描
+`get 'bigdata:student','1001',{COLUMN => 'info:name',VERSIONS=>6}` 获取最新的六个版本的数据
+` delete 'bigdata:student','1001','info:name'` 删除数据，默认删除rowkey最新的一个版本
 
 ## 表的逻辑结构 与物理存储
 逻辑上
@@ -189,3 +246,5 @@ master：通过zk实现分布式管理，实现对region server的管理，当�
 region server ：实际存储的进行
 使用zk实现高可用
 在hdfs中region server管理的实际上是一个个region
+
+## API操作

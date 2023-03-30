@@ -31,3 +31,6 @@ scp -r test.text root@node2:/tmp/
 
 ## 检查xml文件内容是否正确
 xmllint -noout conf/hbase-site.xml
+
+## 创建文件
+touch filename
