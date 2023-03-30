@@ -15,6 +15,8 @@
 * 表很大，一个表可以存储十亿以上的行，上百万列
 * 面向列（族）的存储和权限控制，列族独立索引
 * 稀疏：对为空的列不占用存储空间，表可以设计的非常稀疏
+* 稀疏的分布式的持久的多维排序map，key-value结果
+* 映射由行键，列键和时间戳索引
 
 ## 应用场景
 * 对象存储  
@@ -160,3 +162,30 @@ shell连接hbase
 # 退出hbase shell
 hbase:013:0> quit
 ```
+
+## 表的逻辑结构 与物理存储
+逻辑上
+> 列族
+> 列（与关系型数据库类型）
+> rowKey 行号
+> region ，横向拆分按rowkey字典进行拆分
+> store ，纵向拆分，以列族拆分
+
+物理上 store
+key： rowkey+column family + column qualifier + timestamp + type（put/delete）
+value ：单元格的值
+以时间戳 timesteamp作为版本，对数据进行修改
+
+## 数据模型
+* 命名空间 namespace 即常见的database的概念，默认有两个命名空间 ，hbase和default
+* table 表，只需要声明列族即可，可按需动态追加列
+* row 行，每一行都有一个rowkey和多个column组成，查询数据时只能根据rowkey进行检索，rowkey的设计十分重要
+* column 每个列都有column family（列族） 和column qualifier（列限定符）进行限定，如info：name，info:age
+* timestamp
+* cell 概念上的单元格 ，rowkey+column family + column qualifier + timestamp + type唯一确定
+
+## 基础架构
+master：通过zk实现分布式管理，实现对region server的管理，当某个region server宕机，会将该region server管理的hdfs上的region转移给其他region server管理
+region server ：实际存储的进行
+使用zk实现高可用
+在hdfs中region server管理的实际上是一个个region
