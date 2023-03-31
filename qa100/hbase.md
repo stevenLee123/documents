@@ -182,8 +182,6 @@ start-hbase.sh
 stop-hbase.sh
 ```
 
-
-
 **高可用配置**
 在conf下添加backup-masters,里面指定要设置为备用master的节点
 
@@ -200,6 +198,7 @@ namespace：
 `create_namespace bigdata`
 `update_namespace`
 `list_namespace`
+`describe_namespace`
 
 ddl ：操作表格
 `list` 查看表格列表
@@ -248,3 +247,138 @@ region server ：实际存储的进行
 在hdfs中region server管理的实际上是一个个region
 
 ## API操作
+pom基础包
+```xml
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-client</artifactId>
+      <version>2.5.3</version>
+    </dependency>
+```
+配置文件，从服务端拷贝即可
+```xml
+<configuration>
+    <property>
+        <name>hbase.zookeeper.quorum</name>
+        <value>node1,node2,node3</value>
+    </property>
+
+</configuration>
+```
+创建连接
+```java
+  public static Connection connection = null;
+
+    static{
+
+        //默认使用同步连接
+        try {
+            //默认会加载hbase-site.xml
+            connection = ConnectionFactory.createConnection();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+```
+
+ddl操作
+```java
+public static Connection connection = HBaseConnection.connection;
+
+    /**
+     * 创建命名空间，获取Admin对象来操作
+     * @param namespace
+     */
+    public static void createNamespace(String namespace){
+        try {
+            //轻量级连接，非线程安全，不推荐池化或者缓存
+            Admin admin = connection.getAdmin();
+            //传入命名空间描述
+            NamespaceDescriptor.Builder builder = NamespaceDescriptor.create(namespace);
+            //设置命名空间
+            builder.addConfiguration("user","steven-hbase");
+            admin.createNamespace(builder.build());
+            //关闭admin
+            admin.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+    }
+
+    public static void main(String[] args) throws IOException {
+        //命名空间不能带'-'
+        createNamespace("test_ns1");
+        //关闭hbase连接
+        HBaseConnection.closeConnection();
+    }
+
+```
+
+判断表格是否存在
+```java
+    /**
+     * 判断表格是否存在
+     * @param namespace 命名空间名称
+     * @param tableName 表名
+     * @return
+     */
+    public static boolean isExistedTable(String namespace,String tableName) throws IOException {
+        Admin admin = connection.getAdmin();
+
+        //判断逻辑
+        boolean exists = false;
+        try {
+            exists = admin.tableExists(TableName.valueOf(namespace, tableName));
+            return exists;
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }finally {
+            admin.close();
+        }
+        
+    }
+
+ //判断表格是否存在
+    boolean exists = isExistedTable("bigdata","student1");
+    log.info("is exists:{}",exists);
+```
+创建表格
+```java
+  /**
+     * 创建表格
+     *
+     * @param namespace      命名空间
+     * @param tableName      表明
+     * @param columnFamilies 列族
+     */
+    public static void createTable(String namespace, String tableName, String... columnFamilies) throws IOException {
+        Admin admin = connection.getAdmin();
+
+        try {
+            TableDescriptorBuilder tableDescriptorBuilder =
+                    TableDescriptorBuilder.newBuilder(TableName.valueOf(namespace, tableName));
+            //添加列族描述
+            for (String columnFamily : columnFamilies) {
+                ColumnFamilyDescriptorBuilder columnFamilyDescriptorBuilder = ColumnFamilyDescriptorBuilder.newBuilder(Bytes.toBytes(columnFamily));
+                columnFamilyDescriptorBuilder.setMaxVersions(5);
+                tableDescriptorBuilder.setColumnFamily(columnFamilyDescriptorBuilder.build());
+            }
+            admin.createTable(tableDescriptorBuilder.build());
+        } catch (IOException e) {
+            log.error("表格已经存在");
+            throw new RuntimeException(e);
+        }finally {
+            admin.close();
+        }
+    }
+
+    createTable("test_ns1","student","info","msg");
+
+```
+
+
+
+ 
+
+
