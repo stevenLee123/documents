@@ -287,6 +287,23 @@ hadoop fs -get [-f] [-p] <dst> <localsrc> #下载文件到本地文件系统
 hadoop fs -appendToFile <localsrc><localsrc2>... <dst> #将本地文件合并到hdfs上,用于小文件合并
 hadoop fs -mv [src] [dst] #linux mv 重命名
 ```
+
+hdfs常用命令
+```shell
+hdfs dfs -ls /user  # 查看user下的文件列表信息
+hdfs dfs -lsr /user #递归查看user下文件列表信息
+hdfs dfs -du /user  #查看path下的磁盘情况，单位字节
+hdfs dfs -mkdir /user/steven # 创建文件夹
+hdfs dfs -touchz /user/steven/helloworld # 创建文件
+hdfs dfs -cp /user/steven/helloworld /user/steven/helloworld.txt # 复制文件或文件夹，保留原有的文件或文件夹
+hdfs dfs -mv /user/steven/helloworld.txt /tmp/ #移动文件或文件夹
+hdfs dfs -chmod 750 /tmp #设置tmp文件文件所属人rwx权限，group rx权限 ，other 无权限操作
+hdfs dfs -put/-copyFromLocal hello.txt /user/steven/ #上传本地文件hello.txt到hdfs的/user/steven/目录下
+hdfs dfs -get/-copyToLocal /test/ /user/steven/hello.txt #下载/user/steven/hello.txt到本地test目录
+hdfs dfs -rm /user/steven/hello.txt #删除文件
+hdfs dfs -rmr /user/testdir #递归删除testdir文件夹
+```
+
 hdfs 角色职责
 
 * Namenode： hdfs的核心，维护管理文件系统元数据，包括名称空间目录结构，文件和块的位置信息，访问权限信息，不持久化存储文件中块的datanode的位置信息，是hdfs的唯一入口
