@@ -313,6 +313,831 @@ def hello() { println("hello scala")}
 ```
 
 **函数**
+scala中函数式一个对象
+类似于方法，函数也有参数列表和返回值，
+函数定义不需要def
+无需指定返回值类型
+
+```scala
+//定义
+val getSum3 = (a:Int,b:Int) => a + b
+//使用
+val sum = getSum(11,121)
+```
+
+方法属于类或对象
+> 以将函数对象赋值给一个变量，运行时，它是加载到jvm中的方法区
+>可以将一个函数对象赋值给一个变量，运行时，它是加载到jvm堆内存中
+> 函数式一个对象，继承自FunctionN，函数对象有apply，curried，toString，tupled这些方法，方法则没有
+*函数是对象，方法属于对象*
+方法转化为函数
+
+```scala
+def add(a:Int,b:Int)=a+b
+//赋值给变量，方法名+ 空格+ _
+val a = add _
+val sum = a(1,2)  //3
+```
+n阶乘法表
+```scala
+def printMT(n:Int) ={
+      for(i <- 1 to n; j<- 1 to i) if(j < i) print(s"${j} * ${i} =  ${j * i}  ") else println(s"${j} * ${i} =  ${j * i}  ")
+      }
+def printMT(n:Int) = for(i <- 1 to n; j<- 1 to i) print(s"${j} * ${i}  = ${j * i}" + (if(i == j)"\r\n" else "\t"))  
+//函数实现
+val printMT = (n:Int) => for(i <- 1 to n; j<- 1 to i) print(s"${j} * ${i}  = ${j * i}" + (if(i == j)"\r\n" else "\t"))
+```
+### 类和对象
+scala是一种函数式面向对象语言，支持面向对象编程思想的，也有类和对象的概念，我们可以基于scala语言来开发面向对象的应用程序
+面相对象的特征：封装、继承、多态
+
+创建类
+```scala
+class Customer {
+
+  var name:String = _
+
+  var sex:String = _
+
+  def sayHello(msg:String) = println(msg)
+
+}
+```
+
+权限修饰
+`private` ：自身使用或伴生对象使用
+`private[this]`:仅自身使用伴生对象也无法使用
+`protected`:允许子类使用
+默认：所有范围内都可访问
+
+构造器
+```scala
+class Person2(val name:String = "zhangsan",val age:Int = 23) {
+    println("construct is called")
+
+}
+//调用
+  val p2 = new Person2()
+  println(s"p2:${p2.name},${p2.age}")
+  val p3 = new Person2("lisi",27)
+  println(s"p3:${p3.name},${p3.age}")
+  val p4 = new Person2(age = 30)
+  println(s"p4:${p4.name},${p4.age}")
+```
+辅助构造器
+```scala
+class Person3(val name:String,val address:String) {
+  //  辅助构造器
+    def this(arr:Array[String]){
+      //第一行必须调用主构造器
+      this(arr(0),arr(1))
+    }
+}
+```
+单例对象
+```scala
+object Dog {
+  val leg_num = 4
+  //程序入口
+  def main(args: Array[String]): Unit = {
+    println(Dog.leg_num)
+    Dog.bite()
+  }
+  //成员方法类似于java的静态方法
+  def bite()= println("wang-" * 15)
+}
+```
+app特质
+```scala
+//直接继承app实现程序入口
+object Demo02 extends App {
+  println("hello scala")
+}
+```
+伴生对象
+java中会有些类既有实例成员又有静态成员
+> 如果一个class和object具有相同的名字，这个object称为伴生对象，class称为伴生类
+> 伴生对象和伴生类在同一个scala源文件中
+> 伴生对象和伴生类可以相互访问private属性
+
+```scala
+class Generals {
+    def toWar()={
+      println(s"go to the war with ${Generals.armsName}")
+    }
+}
+//伴生对象，静态
+object Generals{
+    private val armsName = "qinglongdao"
+}
+//使用
+ val g = new Generals
+  g.toWar()
+```
+`private[this]`  只能在当前类中访问伴生对象也无法直接访问
+
+```scala
+class Person4 {
+  private[this] var name:String = _
+  def getName() = name
+  def setName(name:String) = this.name = name
+}
+object Person4{
+  //private[this]变量 无法直接使用
+  def  printPerson(p:Person4) = println(p.getName())
+
+  def main(args: Array[String]): Unit = {
+    val person4 = new Person4
+    person4.setName("zhangsan")
+    Person4.printPerson(person4)
+  }
+}
+```
+
+apply方法：scala支持创建对象按的时候免new动作，需要通过伴生对象来实现
+```scala
+class Person5(var name:String,var age:Int) {
+    println("main construct")
+
+}
+
+object Person5{
+  //scala会自动调用apply
+  def apply(name: String, age: Int): Person5 = new Person5(name, age)
+
+  def main(args: Array[String]): Unit = {
+//    val p = new Person5("zhangsan",27)
+    //免new操作
+    val p = new Person5("zhangsan",27)
+
+    print(p.name,p.age)
+  }
+}
+```
+日期转换示例
+```scala
+object DateUtilsDemo {
+  object DateUtils{
+      var sdf:SimpleDateFormat = null
+
+      def date2String(date:Date,pattern:String) = {
+        sdf = new SimpleDateFormat(pattern)
+        sdf.format(date)
+      }
+
+      def  string2Date(dateString:String,pattern:String) ={
+        sdf =  new SimpleDateFormat(pattern)
+        sdf.parse(dateString)
+      }
+  }
+
+  def main(args: Array[String]): Unit = {
+    println(DateUtils.date2String(new Date(), "yyyy-MM-dd HH:mm:ss"))
+    println(DateUtils.string2Date("2022-12-20","yyyy-MM-dd"))
+  }
+}
+```
+
+### 继承
+class/object A extends B
+
+类继承与java一致
+
+单例对象继承
+```scala
+object Demo03 {
+
+  class Person6(){
+    var name:String = _
+    var age:Int = _
+    def hello() = println("hell scala")
+  }
+
+  object Student extends Person6{
+
+  }
+  def main(args: Array[String]): Unit = {
+    Student.name = "zhangsan"
+    println(Student.name)
+    Student.hello()
+  }
+}
+```
+**方法和属性重写**
+使用override重载属性,重载的属性值必须时val标记的，不能时var标记的
+要使用父类中的成员变量可以使用super.method
+scala编译器不允许使用super.val
+object Demo04 {
+  class Person7 {
+    val name: String = "zhangsan"
+    val age: Int = 23
+
+    def sayHello() = println("person say hello scala")
+  }
+  class Student extends Person7{
+    //使用override重载属性,重载的属性值必须时val标记的，不能时var标记的
+    override val name = "lisi"
+    //父类中用var修饰的方法不能被override
+//    override var age = 30
+    override val age = 30
+
+    override def sayHello(): Unit = {
+      //scala编译器不允许使用super.val
+//      println(super.name)
+      super.sayHello()
+      println("hello student")
+    }
+
+  }
+
+  def main(args: Array[String]): Unit = {
+    val s = new Student
+    println(s.name,s.age)
+    s.sayHello()
+  }
+}
+
+### isInstanceOf 和asInstanceOf
+多态：用相同的接口去表示不同的实现
+isInstanceOf: 判断对象是否是指定类型或指定类型的子类
+asInstanceOf: 将对象转换为指定类型
+```scala
+object Demo05 {
+
+  class Person{
+
+  }
+  class Student extends Person{
+    var name:String = _
+    var age:Int = _
+    def sayHello() = println("person say hello sacla")
+  }
+
+  def main(args: Array[String]): Unit = {
+    //多态，父类引用指向子类独享
+    var person:Person = new Student
+    if(person.isInstanceOf[Student]){
+      val s = person.asInstanceOf[Student]
+      s.sayHello()
+    }
+  }
+}
+```
+### getClass 和classOf
+精准判断对象类型并转换
+```scala
+object Demo06 {
+
+  class Person
+
+  class Student extends Person{
+    var name:String = _
+    def sayHello() = println("student say hello scala")
+  }
+
+  def main(args: Array[String]): Unit = {
+        var p:Person  = new Student
+        println(p.isInstanceOf[Person])  //true
+        println(p.isInstanceOf[Student]) //true
+        println(p.getClass == classOf[Person])  //false
+        println(p.getClass == classOf[Student])  //true
+  }
+}
+```
+
+### 抽象类
+用abstract 关键值定义的类
+```scala
+object Demo07 {
+  abstract class Shape{
+    //抽象方法
+    def area:Double
+  }
+
+  class Square(var edge:Double) extends Shape {
+    override def area: Double = {
+      edge * edge
+    }
+  }
+
+  class Rectangle(var length:Double,var width:Double) extends Shape {
+    override def area: Double = {
+      length * width
+    }
+  }
+
+  class Circle(var raius:Double) extends Shape{
+    override def area: Double = raius *raius * Math.PI
+  }
+
+  def main(args: Array[String]): Unit = {
+    val s1 = new Square(5)
+    println(s"s1.area:${s1.area}")
+    val s2 = new Rectangle(10,5)
+    println(s"s2.area:${s2.area}")
+    val s3 = new Circle(5)
+    println(s"s3.area:${s3.area}")
+  }
+}
+```
+### 抽象字段
+```scala
+object Demo08 {
+
+  abstract class Person{
+    //抽象字段
+    var name:String
+    val age:Int
+  }
+
+  class  Student extends Person{
+    override var name: String = "zhangsan"
+    override val age: Int = 23
+  }
+
+  def main(args: Array[String]): Unit = {
+    val s = new Student
+    println(s.name,s.age)
+  }
+} 
+```
+### 匿名内部类
+语法
+new objectName(){}
+```scala
+object Demo09 {
+
+  abstract class Person{
+    def sayHello()
+  }
+  def show(p:Person) = p.sayHello()
+
+  def main(args: Array[String]): Unit = {
+    //匿名内部类，直接使用
+    new Person {
+      override def sayHello(): Unit = println("person say hello scala")
+    }.sayHello()
+    //匿名内部类
+    show(new Person {
+      override def sayHello(): Unit = println("person say hello in method")
+    })
+    //使用lamda
+    show(() => println("person say hello in method"))
+  }
+}
+```
+示例代码：
+```scala
+object Demo10 {
+  abstract class Animal {
+    var name: String = ""
+    var age: Int = 0
+
+    def run() = println("animal run")
+
+    //抽象方法
+    def eat()
+
+  }
+
+  class Cat extends Animal {
+    override def eat(): Unit = println("cat eat fish")
+
+    def catchMouse() = println("cat catch mouse")
+  }
+
+  class Dog extends Animal {
+    override def eat(): Unit = println("dog eat meat")
+
+    def lookHome() = println("dog look home")
+  }
+
+  def main(args: Array[String]): Unit = {
+    val cat:Animal = new Cat
+    cat.name = "jeff cat"
+    cat.age = 2
+    println(cat.name,cat.age)
+    cat.run()
+    cat.eat()
+
+    if(cat.isInstanceOf[Cat]){
+      val cat2 = cat.asInstanceOf[Cat]
+      cat2.catchMouse()
+    }else{
+      println("not a cat")
+    }
+  }
+}
+```
+
+### trait 特质
+在不影响当前继承体系的情况下，对某些类或对象进行功能加强，可以使用特制 trait实现
+提高代码的复用性
+提高代码的扩展性和可维护性
+类与特质之间是继承关系，只不过类与类之间是单继承，类与特质之间可以是单继承也可以是多继承
+scala的特质可以有普通字段，抽象字段，普通方法，抽象方法
+语法：
+trait traitName{
+
+}
+class ClassName extends  traitName1  with traitName2{
+
+}
+类继承单个特质
+```scala
+object Demo11 {
+  trait Logger{
+    def log(msg:String)
+  }
+
+  class ConsoleLogger extends Logger{
+    override def log(msg: String): Unit = println(msg)
+  }
+
+  def main(args: Array[String]): Unit = {
+    val cl = new ConsoleLogger
+    cl.log("hello scala trait")
+  }
+}
+```
+类继承多个特质
+```scala
+object Demo12 {
+
+  trait MessageSender{
+    def send(msg:String)
+  }
+
+  trait MessageReceiver{
+    def receive()
+  }
+
+  class  MessageWoker extends MessageSender with MessageReceiver{
+    override def send(msg: String): Unit = println(s"发送消息：${msg}")
+
+    override def receive(): Unit = println(s"消息已收到")
+  }
+
+  def main(args: Array[String]): Unit = {
+      val mw = new MessageWoker
+      mw.send("hello scala trait")
+      mw.receive()
+  }
+}
+```
+object 继承trait
+```scala
+object Demo13 {
+  trait Logger{
+    def log(msg:String)
+  }
+
+  trait  Warning{
+    def warn(msg:String)
+  }
+
+  object ConsoleLogger extends Logger with Warning{
+    override def log(msg: String): Unit = println(s"控制台日志信息：${msg}")
+
+    override def warn(msg: String): Unit = println(s"控制台警告信息：${msg}")
+  }
+
+  def main(args: Array[String]): Unit = {
+    ConsoleLogger.log("this is a log")
+    ConsoleLogger.warn("this is a warn")
+  }
+}
+```
+trait 中的成员(抽象成员变量和方法必须override)
+```scala
+
+object Demo14 {
+  trait Hero{
+    var name = "关羽"
+    //抽象字段
+    var arms:String
+
+    def eat() = println("guanyu eat meat")
+    //抽象方法
+    def toWar()
+  }
+
+  class Generals extends Hero{
+    override var arms: String = "青龙偃月刀"
+
+    override def toWar(): Unit = print(s"${name} go to war,use ${arms}")
+  }
+
+  def main(args: Array[String]): Unit = {
+    val g = new Generals
+    g.eat()
+    g.toWar()
+  }
+}
+```
+
+对象混入trait
+    //使用对象混入,临时拥有特质
+    val u1 = new User with Logger
+```scala
+object Demo15 {
+
+  trait Logger{
+    def log(msg:String) = print(msg)
+  }
+
+  class User{
+
+  }
+
+  def main(args: Array[String]): Unit = {
+    //使用对象混入,临时拥有特质
+    val u1 = new User with Logger
+    u1.log("this is a log")
+  }
+}
+```
+### trait 使用适配器模式
+当特质中存在多个抽象方法，而具体的使用类只需要用某一个方法时，可以在中间加上一个抽象类，将所有的方法进行一个空的实现，然后让最终的使用类继承该抽象类的，实现需要使用的方法
+```scala
+object Demo16 {
+
+  trait PlayLOL{
+    def top()
+    def mid()
+    def adc()
+    def support()
+    def jungle()
+    def schoolChild()
+  }
+
+  abstract class Player extends PlayLOL {
+    override def top(): Unit = {
+
+    }
+
+    override def mid(): Unit = {
+
+    }
+
+    override def adc(): Unit = {
+
+    }
+
+    override def support(): Unit = {
+
+    }
+
+    override def jungle(): Unit = {
+
+    }
+
+    override def schoolChild(): Unit = {}
+  }
+
+  class GreenHand extends Player{
+    override def schoolChild(): Unit = println("schoolChild")
+
+    override def support(): Unit = {
+      println("support")
+    }
+  }
+
+  def main(args: Array[String]): Unit = {
+    val g = new GreenHand
+    g.support()
+    g.schoolChild()
+  }
+}
+```
+### 使用trait实现模版方法
+设计程序时知道算法具体的步骤和执行顺序，但是具体的步骤未知，可以使用模版方法
+在scala中可以使用trait或抽象类实现模版类
+```scala
+object Demo17 {
+  trait Template {
+    def code()
+
+    def getRuntime = {
+      val start = System.currentTimeMillis()
+      code()
+
+      val end = System.currentTimeMillis()
+      end- start
+    }
+  }
+
+  class ForDemo extends Template {
+    override def code(): Unit = {
+      for( i <- 1 to 10000){
+        println(s"hello scala${i}")
+      }
+    }
+  }
+
+  def main(args: Array[String]): Unit = {
+    val f = new ForDemo
+    println(f.getRuntime)
+  }
+}
+```
+
+trait实现责任链模式
+多个trait中出现同一个方法，且该方法最后都调用了父类中的某个方法，当类继承这多个trait后，旧可以依次调用多个trait中的此同一个方法，形成一个调用链
+**叠加特质，按从右往左的顺序执行trait的方法，然后执行，当子特质中的方法执行完毕后，最后执行父特质中的方法**
+```scala
+object Demo18 {
+  trait Handler{
+    def handle(data:String) = {
+      println("具体的数据处理")
+      println(data)
+    }
+  }
+  trait  DataValidHandler extends Handler{
+    override def handle(data: String): Unit = {
+      println("验证数据")
+      super.handle(data)
+
+    }
+  }
+  trait SingatureValidHandler extends Handler{
+    override def handle(data: String): Unit = {
+      println("检查数据")
+      super.handle(data)
+    }
+  }
+  //按从右往左的顺序执行trait的方法，然后执行，当子特质中的方法执行完毕后，最后执行父特质中的方法
+  //叠加特质
+  class Payment extends DataValidHandler with SingatureValidHandler{
+    def pay(data:String): Unit ={
+      println("用户发起支付")
+      //会按照顺序调用trait的方法
+      super.handle(data)
+    }
+  }
+
+  def main(args: Array[String]): Unit = {
+    val p = new Payment
+    p.pay("章三给李四转100元")
+  }
+}
+```
+trait的构造机制
+每个特质只有一个无参构造器
+遇到一个类继承另一个类及多个trait的情况，当创建类的实例时，它的构造器执行顺序如下：
+1. 执行父类的构造球
+2. 按照从左到右的顺序，依次执行trait的构造器
+3. 如果trait有父trait，先执行父trait的构造器
+4. 如果有多个trait有相同的父trait，则父trait的构造器只初始化一次
+5. 执行子类构造器
+
+```scala
+object Demo19 {
+ trait Logger{
+   println("执行logger构造器")
+ }
+
+  trait MyLogger extends Logger{
+    println("执行MyLogger构造器")
+  }
+
+  trait TimeLogger extends Logger{
+    println("执行TimeLogger构造器")
+  }
+  class Person{
+    println("执行Person构造器")
+  }
+
+  class  Student extends Person with MyLogger with TimeLogger{
+    println("执行Student构造器")
+  }
+
+  def main(args: Array[String]): Unit = {
+    val s = new Student
+  }
+
+  /**
+   * 执行Person构造器
+     执行logger构造器
+     执行MyLogger构造器
+     执行TimeLogger构造器
+     执行Student构造器
+   */
+}
+```
+trait 继承class
+特质会将class的成员都继承下来
+```scala
+object Demo20 {
+
+  class Message{
+    def printMsg() = println("hello scala")
+  }
+  trait Logger extends Message
+
+  class ConsoleLogger extends Logger
+
+  def main(args: Array[String]): Unit = {
+    val cl = new ConsoleLogger
+    cl.printMsg()
+  }
+}
+```
+综合实例
+```scala 
+object Demo21 {
+
+  abstract class Programmer {
+    var name: String = _
+    var age: Int = _
+
+    def eat()
+
+    def skill()
+  }
+
+  class JavaProgrammer extends Programmer {
+    override def eat(): Unit = println("java eat")
+
+    override def skill(): Unit = println("java language")
+  }
+
+  class PythonProgrammer extends Programmer {
+    override def eat(): Unit = println("python eat")
+
+    override def skill(): Unit = println("python language")
+  }
+
+  trait BigData {
+    def learningBigData() = {
+      println("learning bigdata skill: hadoop,zookeeper,hbase,hive,sqoop,scala,spark")
+    }
+  }
+  class PartJavaProgrammer extends JavaProgrammer with BigData {
+    override def eat(): Unit = {
+
+      print("java and bigdata eat")
+    }
+
+    override def skill(): Unit = {
+      super.skill()
+      super.learningBigData()
+    }
+  }
+  class PartPythonProgrammer extends JavaProgrammer with BigData {
+    override def eat(): Unit = {
+
+      print("python and bigdata eat")
+    }
+
+    override def skill(): Unit = {
+      super.skill()
+      super.learningBigData()
+    }
+  }
+  def main(args: Array[String]): Unit = {
+    val jp = new JavaProgrammer
+    jp.eat()
+    jp.skill()
+    var pp = new PythonProgrammer
+    pp.eat()
+    pp.skill()
+    var bjp = new PartJavaProgrammer
+    bjp.eat()
+    bjp.skill()
+    var pjp = new PartPythonProgrammer
+    pjp.eat()
+    pjp.skill()
+  }
+}
+```
+### 包
+关键字`package`修饰
+package目录可以与源码文件目录不一致
+建议包嵌套不超过3层
+三种包写法
+合并版，分解版以及使用串联式
+
+### 样例类
+
+### 样例对象
+
+### 案例--计算器
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
