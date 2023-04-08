@@ -302,6 +302,7 @@ hdfs dfs -put/-copyFromLocal hello.txt /user/steven/ #上传本地文件hello.tx
 hdfs dfs -get/-copyToLocal /test/ /user/steven/hello.txt #下载/user/steven/hello.txt到本地test目录
 hdfs dfs -rm /user/steven/hello.txt #删除文件
 hdfs dfs -rmr /user/testdir #递归删除testdir文件夹
+hdfs dfs -text /spark/datas/README.md #以文本方式读取数据
 ```
 
 hdfs 角色职责

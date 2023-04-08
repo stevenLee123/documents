@@ -3156,6 +3156,552 @@ object Demo114 {
   }
 }
 ```
+### stack 栈 后进先出
+```scala
+//集合 Stack
+object Demo116 {
+
+  def main(args: Array[String]): Unit = {
+    //添加的顺序是5，4，3，2，1
+    val s1 = mutable.Stack(1, 2, 3, 4, 5)
+    println(s1) //Stack(1, 2, 3, 4, 5)
+    println(s1.top)
+    println(s1.push(6)) //Stack(6, 1, 2, 3, 4, 5)
+    println(s1.pushAll(Seq(11,22,33))) //Stack(33, 22, 11, 1, 2, 3, 4, 5)
+    println(s1.pop())//33
+    //清空
+    println(s1.clear())
+  }
+}
+```
+可变栈ArrayStack
+```scala
+//集合 Stack
+object Demo117 {
+
+  def main(args: Array[String]): Unit = {
+    //加入顺序是5，4，3，2，1
+   val s1 = mutable.ArrayStack(1,2,3,4,5)
+    println(s1)
+    //复制栈顶再押入
+    s1.dup()
+    println(s1)
+    //方法执行之后栈中的数据会恢复到执行之前
+    s1.preserving({
+      //方法内清除
+      s1.clear()
+      println("do clear")
+    })
+    println(s1)
+  }
+}
+```
+
+### Queue 队列 先进后出
+```scala
+//集合 Queue
+object Demo118 {
+
+  def main(args: Array[String]): Unit = {
+    val q1 = mutable.Queue(1,2,3,4,5)
+    println(q1) //Queue(1, 2, 3, 4, 5)
+    //添加
+    q1.enqueue(6)
+    println(q1)
+    //添加
+    q1.enqueue(7,8,9)
+    println(q1)
+    //移除
+    println(q1.dequeue())
+    println(q1)
+    //移除第一个奇数
+    println(q1.dequeueFirst(_%2!=0))
+    //移除满足条件的所有
+    println(q1.dequeueAll(_%2 == 0))
+    println(q1)
+  }
+}
+```
+### Set集合 不包含重复元素
+HashSet 唯一无序
+LinkedHashSet 唯一有序
+TreeSet 唯一，排序
+```scala
+
+//集合 Set
+object Demo119 {
+
+  def main(args: Array[String]): Unit = {
+    //唯一，升序
+    val s1 = SortedSet(1,12,3,41,5)
+    println(s1)
+
+    //唯一，无序
+    val s2 = HashSet(1,12,3,41,5)
+    println(s2)
+
+    //唯一，有序，存入与取出一样的顺序
+    val s3 = mutable.LinkedHashSet(1,12,3,41,5)
+    println(s3)
+  }
+}
+```
+### Map 键值对
+HashMap
+SortedMap
+ListMap
+TreeMap
+```scala
+//集合 Map
+object Demo120 {
+
+  def main(args: Array[String]): Unit = {
+    val m1 = Map("a" ->1 ,"b" -> 2 ,"c"->3)
+    //遍历
+    for((k,v) <- m1) println(k,v)
+    m1.foreach(println(_))
+    println(m1.filterKeys(_=="a")) //Map(a -> 1)
+  }
+}
+```
+
+统计字符个数
+```scala
+//集合 统计字符串中字符出现的次数
+object Demo121 {
+
+  def main(args: Array[String]): Unit = {
+    println("please input :")
+    val line = StdIn.readLine()
+    val m1 = mutable.Map[Char,Int]()
+    val chars = line.toCharArray
+    for (k <- chars){
+      if(!m1.contains(k)){
+        m1 += (k ->1)
+      }else{
+        m1 +=(k -> (m1.getOrElse(k,1)+1))
+      }
+    }
+    m1.foreach(println(_))
+  }
+}
+```
+
+### Actor并发编程 2.12之后的版本已经被移除，后续版本都是用AKKA来代替Actor
+基于事件模型的并发机制，不共享数据，依赖消息传递的一种并发编程模式，避免资源争夺，死锁等问题
+Actor.start() 类似于java的Thread.start()启动线程
+自动执行act()方法，类似于java中Thread.run()方法的自动调用
+向Actor发送消息，使用偏函数发送消息，（receive只能接收一次消息，可以通过while（true）死循环来进行持续消息发送）
+发送消息可以使用异步不带返回消息，同步带返回消息，异步带返回消息的方式来发送消息
+可以使用loop{react{}}来复用线程，实现消息循环接收
+执行exit（）退出
+
+### Akka并发编程框架
+构建高并发，分布式和可扩展的基于事件驱动的应用工具包，使用scala库开发
+提供异步非阻塞，高性能的事件驱动编程模型
+Akka也是机遇Actor来实现
+* ActorSystem：负责创建和监督Actor
+* 实现Actor类实现receive方法，preStart（）,在Actor对象构建后执行，在Actor声明周期中仅执行一次
+* 加载Actor
+* 嗲用ActorSystem.actorOf加载Actor
+Actor Path
+可以访问本地Actor ： `akka://actorSystemname/user/actorname`
+远程Actor `akka.tcp://my-sys@ip:port/user/Actorname`
+简单消息发送实现：
+```xml
+<dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-actor_2.12</artifactId>
+            <version>2.8.0</version>
+        </dependency>
+```
+```scala
+//提交消息
+case class SubmitTaskMessage(msg:String)
+//提交成功消息
+case class SuccessSubmitTaskMessage(msg:String)
+
+//消息接收actor
+object ReceiverActor extends Actor{
+  override def receive: Receive = {
+    case SubmitTaskMessage(msg) => {
+      println(s"i am receiver, i get a message:${msg}")
+      sender ! SuccessSubmitTaskMessage("this is a back message")
+    }
+  }
+}
+//消息发送actor
+object SenderActor extends Actor{
+  override def receive: Receive = {
+    case "start" => {
+      println("get main start message")
+      //获取的actor的路径
+      val receiverActor = context.actorSelection("akka://actorSystem/user/receiveActor")
+      receiverActor ! SubmitTaskMessage("i am senderActor, i send a message to you ")
+
+    }
+    case SuccessSubmitTaskMessage(msg) =>println(s"senderActor get a back message:${msg}")
+  }
+}
+//入口程序
+object Entrance {
+  def main(args: Array[String]): Unit = {
+
+    //创建ActorSystem加载自定义的Actor对象管理他们
+    val actorSystem = ActorSystem("actorSystem", ConfigFactory.load())
+    //被ActorSystem管理的自定义actor
+    val senderActor = actorSystem.actorOf(Props(SenderActor), "senderActor")
+    val receiveActor = actorSystem.actorOf(Props(ReceiverActor), "receiveActor")
+
+    //4. 由actorSystem发送一个start消息
+    senderActor ! "start"
+  }
+}
+```
+Akka定时任务 Sheduler.schedule()
+```scala
+object MainActor {
+  object ReceiverActor extends Actor{
+    override def receive: Receive = {
+
+      case x => println(x)
+    }
+  }
+
+  def main(args: Array[String]): Unit = {
+    val actorSystem = ActorSystem("actorSystem", ConfigFactory.load())
+    val receiverActor = actorSystem.actorOf(Props(ReceiverActor), "receiverActor")
+    import actorSystem.dispatcher
+    import scala.concurrent.duration._
+    //采用发送消息实现定时任务,延迟3s，每两秒发送一次消息
+//    actorSystem.scheduler.schedule(3 seconds,2 seconds,receiverActor,"hello scala")
+    //采用发送自定义消息，结合函数实现定时任务
+//    actorSystem.scheduler.schedule(3 seconds,2 seconds)(receiverActor !"hello scala")
+
+    //实际开发中使用这种方式
+    actorSystem.scheduler.schedule(0 seconds,2 seconds){
+      receiverActor ! "hello scala"
+    }
+  }
+}
+```
+akka实现两个进程之间的通信
+master：
+```conf
+akka {
+  actor {
+    provider = "akka.remote.RemoteActorRefProvider"
+  }
+  remote {
+    netty.tcp {
+      hostname = "127.0.0.1"
+      port = 2554
+    }
+    artery {
+          enabled = on
+          canonical.hostname = "127.0.0.1"
+          canonical.port = 10001
+        }
+  }
+
+}
+akka.actor.allow-java-serialization=on
+```
+```scala
+
+object MasterActor extends Actor {
+  override def receive: Receive = {
+
+    case "connect" => {
+      println("master get a message :connect")
+      sender ! "success"
+    }
+    case x => println(s"other message:${x}")
+  }
+}
+object MasterEntrance {
+
+  def main(args: Array[String]): Unit = {
+    val masterActorSystem = ActorSystem("masterActorSystem", ConfigFactory.load())
+    val masterActor = masterActorSystem.actorOf(Props(MasterActor), "masterActor")
+    masterActor ! "测试数据"
+  }
+
+}
+```
+worker
+```conf
+akka {
+  actor {
+    provider = "akka.remote.RemoteActorRefProvider"
+  }
+  remote {
+    netty.tcp {
+      hostname = "127.0.0.1"
+      port = 2553
+    }
+    artery {
+          enabled = on
+          canonical.hostname = "127.0.0.1"
+          canonical.port = 10000
+        }
+  }
+
+}
+akka.actor.allow-java-serialization=on
+```
+```scala
+//actor及程序入口
+/**
+ * @Description: akka进程之间的通信，spark通信框架的底层实现
+ * @CreateDate: Created in 2023/4/8 10:08 
+ * @Author: lijie3
+ */
+object Entrance {
+  def main(args: Array[String]): Unit = {
+    val actorSystem = ActorSystem("actorSystem", ConfigFactory.load())
+    val workActor = actorSystem.actorOf(Props(WorkActor), "workActor")
+
+    workActor ! "setup"
+  }
+}
+
+/**
+ * @Description:
+ * @CreateDate: Created in 2023/4/8 10:07 
+ * @Author: lijie3
+ */
+object WorkActor extends Actor{
+  override def receive: Receive = {
+    case "setup" => {
+      println(s"worker Actor get message:setup")
+
+      val masterActor = context.system.actorSelection("akka://masterActorSystem@127.0.0.1:10001/user/masterActor")
+      masterActor ! "connect"
+    }
+    case "success" => println(s"worker get messsage :success")
+  }
+}
+```
+
+### spark中的通信框架实现--使用akka实现worker的心跳检测demo
+原理简介：
+1. worker向master发送注册信息RegisterMessage
+2. 注册成功后，master向worker发送SuccesRegisterMessage
+3. worker向master发送HeartBeatMesssage发送心跳消息
+4. master更新worker的更新时间
+5. master定时检测worker的心跳时间是否超时，如果超时，则将worker从worker列表中移除
+代码示例
+消息实体
+```scala
+/**
+ * worker信息
+ * @param workId
+ * @param cpu
+ * @param mem
+ * @param lastHeartbeatTime
+ */
+case class WorkerInfo(workId:String,cpu:Int,mem:Int,lastHeartbeatTime:Long)
+//worker注册消息实体
+case class WorkerRegisterMessage(workerId:String,cpu:Int,mem:Int)
+
+//注册成功后消息回执消息样例
+case class RegisterSuccessMessage()
+
+//注册完成之后的心跳消息实体
+case class WorkerHeartBeatMessage(workId:String,cpu:Int,mem:Int)
+```
+master代码
+```conf
+akka {
+  actor {
+    provider = "akka.remote.RemoteActorRefProvider"
+  }
+  remote {
+    netty.tcp {
+      hostname = "127.0.0.1"
+      port = 2554
+    }
+    artery {
+          enabled = on
+          canonical.hostname = "127.0.0.1"
+          canonical.port = 10001
+        }
+  }
+
+}
+akka.actor.allow-java-serialization=on
+
+## 心跳检查时间间隔
+master.check.hearbeat.internal = 6
+## 心跳超时时间
+master.check.hearbeat.timeout= 15
+
+```
+```scala
+/**
+ * @Description: master入口
+ * @CreateDate: Created in 2023/4/8 11:28 
+ * @Author: lijie3
+ */
+object Master {
+  //akka address akka://masterActorSystem@127.0.0.1:10001
+  def main(args: Array[String]): Unit = {
+    val masterActorSystem = ActorSystem("masterActorSystem", ConfigFactory.load())
+    val masterActor = masterActorSystem.actorOf(Props(MasterActor), "masterActor")
+    masterActor ! "hello spark"
+
+  }
+}
+import com.typesafe.config.{Config, ConfigFactory}
+
+/**
+ * @Description: 读取master配置文件
+ * @CreateDate: Created in 2023/4/8 12:37 
+ * @Author: lijie3
+ */
+object ConfigUtils {
+
+  private val config: Config = ConfigFactory.load()
+   val `master.check.hearbeat.internal`: Int = config.getInt("master.check.hearbeat.internal")
+   val `master.check.hearbeat.timeout`: Int = config.getInt("master.check.hearbeat.timeout")
+
+}
+
+object MasterActor extends Actor{
+
+  //map集合存储注册好的worker信息
+  private val registeredWokerMap = Map[String,WorkerInfo]()
+
+
+  override def preStart(): Unit = {
+    //使用定时器检查worker状态
+    import scala.concurrent.duration._
+    import context.dispatcher
+    context.system.scheduler.schedule(0 seconds,ConfigUtils.`master.check.hearbeat.internal` seconds){
+      val timoutWorkerMap = registeredWokerMap.filter{
+            //计算worker心跳是否超时
+        keval => {
+          val time = keval._2.lastHeartbeatTime
+            //判断是否超时
+          if(new Date().getTime - time > ConfigUtils.`master.check.hearbeat.timeout` * 1000) true else false
+        }
+      }
+      if(!timoutWorkerMap.isEmpty){
+        //超时移除
+        registeredWokerMap --= timoutWorkerMap.keys
+      }
+      //获取还存活的Worker列表
+      val workerList = registeredWokerMap.values.toList
+      val sortedWorkerList = workerList.sortBy(_.mem).reverse
+      println(s"sorted workers: ${sortedWorkerList}")
+    }
+
+  }
+
+  override def receive: Receive = {
+    //接收worker的注册信息
+    case WorkerRegisterMessage(workerId,cpu,mem) =>{
+      println(s"Master receive register message:${workerId},${cpu},${mem}")
+      //注册
+      registeredWokerMap += workerId-> WorkerInfo(workerId,cpu,mem,new Date().getTime)
+      sender ! RegisterSuccessMessage
+    }
+     //接收心跳消息
+    case WorkerHeartBeatMessage(workerId,cpu,mem) =>{
+      println(s"Master receive get hearbeat info :${workerId},${cpu},${mem}")
+      //更新心跳时间
+      registeredWokerMap += workerId-> WorkerInfo(workerId,cpu,mem,new Date().getTime)
+      println(registeredWokerMap)
+    }
+
+  }
+}
+```
+worker代码
+```conf
+akka {
+  actor {
+    provider = "akka.remote.RemoteActorRefProvider"
+  }
+  remote {
+    netty.tcp {
+      hostname = "127.0.0.1"
+      port = 2553
+    }
+    artery {
+          enabled = on
+          canonical.hostname = "127.0.0.1"
+          canonical.port = 10000
+        }
+  }
+}
+akka.actor.allow-java-serialization=on
+## 5s发送一次心跳
+worker.heartbeat.internal = 5
+```
+```scala
+object ConfigUtils {
+  //获取配置信息对象
+  private val config: Config = ConfigFactory.load()
+  //获取心跳间隔时间
+  val `worker.heartbeat.internal`: Int = config.getInt("worker.heartbeat.internal")
+}
+object WokerActor extends Actor{
+
+  private var masterActorRef:ActorSelection = _
+  private var workerId:String = _
+  private var cpu:Int = _
+  private var mem:Int = _
+  //模拟cpu和内存
+  private var cpu_list = List(1,2,4,6,8)
+  private var mem_list = List(512,1024,2048,4096)
+
+  //启动后立即发送注册信息
+  override def preStart(): Unit = {
+    //获取masterActor引用
+    masterActorRef = context.system.actorSelection("akka://masterActorSystem@127.0.0.1:10001/user/masterActor")
+    workerId = UUID.randomUUID().toString
+    val r = new Random()
+    cpu = cpu_list(r.nextInt(cpu_list.size))
+    mem = mem_list(r.nextInt(mem_list.size))
+    //发送注册信息
+    val registerMessage = WorkerRegisterMessage(workerId, cpu, mem)
+    //发送消息
+    masterActorRef !registerMessage
+  }
+
+  override def receive: Receive = {
+    case RegisterSuccessMessage => println("workeractor register success")
+    //定时给masteractor发送心跳消息
+    import scala.concurrent.duration._
+    import context.dispatcher
+
+      context.system.scheduler.schedule(0 seconds,ConfigUtils.`worker.heartbeat.internal` seconds)(
+        //发送心跳
+        masterActorRef ! WorkerHeartBeatMessage(workerId,cpu, mem)
+      )
+  }
+}
+object Worker {
+  //akka address akka://masterActorSystem@127.0.0.1:10001
+  def main(args: Array[String]): Unit = {
+    val workerActorSystem = ActorSystem("workerActorSystem", ConfigFactory.load())
+    val workerActor = workerActorSystem.actorOf(Props(WokerActor), "workerActor")
+    workerActor ! "hello spark client"
+  }
+}
+```
+
+
+
+
+
+
+
+
+
+
 
 
 

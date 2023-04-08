@@ -52,4 +52,8 @@ touch filename
 获取project文件夹的acl权限控制信息
 `getfacl project`
 
+## 创建软连接
+`ln -s spark-3.3.2-bin-hadoop3/ test-spark`
+创建软连接后，软链接可以当作文件或文件夹使用
+
 
