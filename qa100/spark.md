@@ -122,7 +122,7 @@ resultRDD.saveAsTextFile("/spark/datas/wc-ouput1")
 sc.textFile("/spark/datas/README.md").flatMap(_.split("\\s+")).map((_,1)).reduceByKey(_ + _).saveAsTextFile("/spark/datas/wc-ouput1")
 ```
 
-sc -- SparkContext用于加载数据，封装到RDD集合中，调度每个job执行
+* sc -- SparkContext用于加载数据，封装到RDD集合中，调度每个job执行
 
 * 使用spark-submit 提交圆周率计算程序
 使用`./bin/spark-submit`来通过jar包提交任务到本地任务
@@ -136,41 +136,120 @@ sc -- SparkContext用于加载数据，封装到RDD集合中，调度每个job�
 --master spark://node1:7077 指定使用哪个spark运行
 
 **集群模式**
-管理者： AppMaster（MapReduce）、Driver Program（Spark） JobManager（Flink）
-任务实施者： Nodemanager（hadoop）、executor（Spark）
+主从架构，类似与hadoop的yarn架构，管理整个集群资源，分配资源给spark Application使用
+角色：
+* Master
+类似于ResourceManager，挂历所有资源状态，分配资源（内存，cpu核数）
+* worker
+类似于nodeManager，管理每个节点中的资源，启动进程，执行task任务
+高可用，使用zk的强一致性实现自动切换故障主节点，实现故障转移
+* HistoryServer 任务历史服务器
+专门供用户查看运行完成的sparkApplication，方便监控操作
+
 > standalone ---使用内部的资源调度器
+* 在原来的local mode 方式部署的配置文件基础上修改spark-env.sh
 修改conf/skark-env.sh
+```shell
+  #master主机及端口
+  SPARK_MASTER_HOST=node1
+ SPARK_MASTER_PORT=7077
+ SPARK_MASTER_WEBUI_PORT=8080
+ #worker常用配置
+ SPARK_WORKER_CORES=1
+ SPARK_WORKER_MEMORY=1g
+  SPARK_WORKER_PORT=7078
+ SPARK_WORKER_WEBUI_PORT=8081
+ #配置历史服务器
+ export SPARK_HISTORY_OPTS="
+-Dspark.history.ui.port=18080
+-Dspark.history.fs.logDirectory=hdfs://node1:8020/spark/history
+-Dspark.history.retainedApplications=30"
 ```
-export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk1.8.0_291.jdk/Contents/Home
-SPARK_MASTER_HOST=localhost
-SPARK_MASTER_PORT=7077
-```
-修改workers
+* 修改workers
 ```
 node1
 node2
 node3
 ```
-* 启动：
-```
-./sbin/start-all.sh
-```
-提交任务
+* 修改spark-default.sh配置修改对event的日志记录配置
 ```shell
+# 开启事件日志记录
+spark.eventLog.enabled           true
+# 日志记录的hdfs目录
+spark.eventLog.dir               hdfs://node1:8020/spark/history
+```
+* 修改log4j.properties日志级别,根据实际需求进行修改
+```shell
+rootLogger.level = warn
+```
+
+* 启动进程：
+```shell
+## 启动master
+./sbin/start-master.sh
+## 启动所有的worker
+./sbin/start-slaves.sh
+## 启动历史服务器
+./sbin/start-history-server.sh
+## 尝试通过sparks-submit运行计算圆周率的应用 10 --标识执行1次个任务 --master指定master地址
 ./bin/spark-submit --class org.apache.spark.examples.SparkPi\
  --master 'spark://node1:7077' \
 ./examples/jars/spark-examples_2.12-3.3.2.jar \
 10
-```
-10 ---标识执行10个任务
+# 正常情况下能在18080端口的页面看到运行的信息
+# 停止master
+./sbin/stop-master.sh
+#停止worker
+./sbin/stop-slaves.sh
 
-* 配置历史任务
-./sbin/start-history-star.sh
-
-* 集群个停止
+#集群快捷启动
+./bin/start-all.sh
+# 集群停止
 ./bin/stop-all.sh
+```
+* 当spark application 运行到standalone集群上时，有两部分组成
+    * Driver Program （AppMaster） ：jvm process，运行在master上，必须创建SparkContext上下文，且只能存在一个
+    * Executors ：jvm process，java进程，运行在worker节点上运行task任务，以线程为单位来运行，Executors可以认为是一个线程池，需要获取cpu核数和内存资源
+流程：
+> driver 将用户程序划分成不同的执行阶段stage，执行每个阶段由一组完全相同的Task组成，task分别作用于带处理数据的不同分区，在阶段划分完成和task创建完成后，driver会向executor发送Task
+一个spark application中包含多个job，每个job中有多个stage，每个job会按照DAG图进行执行
+
+> spark application 程序运行的三个核心概念： job -> stage(一个job分为多个stage) -> Task（一个stage会分为多个Task，task处理的数据不同，处理不同分区的数据，处理数据的逻辑相同）
+
 
 高可用
+上面的集群部署存在单点故障的问题，可以使用zk的强一致性进行故障转移
+* 在conf/spark-env.sh中添加高可用的配置
+```shell
+export SPARK_DAEMON_JAVA_OPTS="  
+-Dspark.deploy.recoveryMode=ZOOKEEPER  
+-Dspark.deploy.zookeeper.url=node1:2181,node2:2181,node3:2181 
+-Dspark.deploy.zookeeper.dir=/spark-ha" 
+#注释掉前面的master配置
+#SPARK_MASTER_HOST=node1
+```
+
+* 启动zk集群
+```shell
+zkServer.sh start
+zkServer.sh status
+```
+
+* 启动集群
+```shell
+##node1，node2上的master
+./sbin/start-master.sh
+## 启动worker
+./sbin/start-slaves.sh
+```
+HA模式下提交spark任务 --master 中指定主备master的地址
+```shell
+./bin/spark-submit --class org.apache.spark.examples.SparkPi\
+ --master 'spark://node1:7077,node2:7077' \
+./examples/jars/spark-examples_2.12-3.3.2.jar \
+10
+```
+停止node1上的master进程后，node2上的master切换成active状态需要1-2分钟
 
 > yarn
 使用hadoop的yarn进行资源调度
