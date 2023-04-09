@@ -29,10 +29,11 @@ spark处理数据是，将数据封装到集合RDD中，RDD中有很多partition
 spark中每个task任务以线程Thread运行
 
 spark特点
-Simple --简单
-Fast --快
-Scalable -- 可扩展的
-Unified --统一的，能从任何地方读取数据 hdfs，csv，parquet，rdbms，es，redis，kafka等
+* Simple --简单
+* Fast --快
+* Scalable -- 可扩展的
+* Unified --统一的，能从任何地方读取数据 hdfs，csv，parquet，rdbms，es，redis，kafka等
+
 spark与hadoop处理数据的区别：
 * spark处理数据时，可以将中间处理结果数据存储到内存中
 * spark job调度以DGA方式，每个任务task以线程的方式运行，而mapreduce以进程方式运行
@@ -69,6 +70,7 @@ Resilient Distributed Dataset --弹性分布式数据集
 4. spark安装包分发
 
 两种模式：
+
 **本地模式**
 > 本地运行模式 local mode，所有的任务都运行在本地的一个JVM process进程中
 * conf/spark-env.sh配置
@@ -136,6 +138,8 @@ sc.textFile("/spark/datas/README.md").flatMap(_.split("\\s+")).map((_,1)).reduce
 --master spark://node1:7077 指定使用哪个spark运行
 
 **集群模式**
+**standalone模式**
+
 主从架构，类似与hadoop的yarn架构，管理整个集群资源，分配资源给spark Application使用
 角色：
 * Master
@@ -217,7 +221,8 @@ rootLogger.level = warn
 > spark application 程序运行的三个核心概念： job -> stage(一个job分为多个stage) -> Task（一个stage会分为多个Task，task处理的数据不同，处理不同分区的数据，处理数据的逻辑相同）
 
 
-高可用
+**高可用**
+
 上面的集群部署存在单点故障的问题，可以使用zk的强一致性进行故障转移
 * 在conf/spark-env.sh中添加高可用的配置
 ```shell
@@ -227,6 +232,8 @@ export SPARK_DAEMON_JAVA_OPTS="
 -Dspark.deploy.zookeeper.dir=/spark-ha" 
 #注释掉前面的master配置
 #SPARK_MASTER_HOST=node1
+# 由于zk会占用8080的端口这里将8080 端口改成10001
+ SPARK_MASTER_WEBUI_PORT=10001
 ```
 
 * 启动zk集群
@@ -250,18 +257,88 @@ HA模式下提交spark任务 --master 中指定主备master的地址
 10
 ```
 停止node1上的master进程后，node2上的master切换成active状态需要1-2分钟
+**使用yarn来做资源调度**
+* 在spark-env.sh中添加yarn环境变量
+```shell
+export JAVA_HOME=/export/server/jdk1.8.0_131
+HADOOP_CONF_DIR=/export/server/hadoop-3.3.4/etc/hadoop
+YARN_CONF_DIR=/export/server/hadoop-3.3.4/etc/hadoop
+```
+* 配置MRHistoryServer地址，修改etc/hadoop/yarn-site.xml
+```xml
+<!--日志聚集开启-->
+ <property>
 
-> yarn
-使用hadoop的yarn进行资源调度
+        <name>yarn.log-aggregation-enable</name>
+        <value>true</value>
+    </property>
+ </property>
+ <!--日志保存时间-->
+        <property>
+        <name>yarn.log-aggregation.retain-seconds</name>
+        <value>604800</value>
+    </property>
+     <!--日志服务器地址-->
+     <property>
+        <name>yarn.log.server.url</name>
+        <value>http://node1:19888/jobhistory/logs</value>
+    </property>
+    <!--禁用yarn的内存检查-->
+    <property>
+        <name>yarn.nodemanager.pmem-check-enabled</name>
+        <value>false</value>
+    </property>
+    <property>
+        <name>yarn.nodemanager.vmem-check-enabled</name>
+        <value>false</value>
+    </property>
+```
+
+
+* 修改spark-default.conf，添加mrHistoryServer配置
+```shell
+spark.yarn.historyServer.address node1:18080
+# 设置sparkjar目录
+spark.yarn.jars hdfs://node1:8020/spark/apps/jars
+```
+
+> 当sparkapplication应用提交运行在yarn上时，默认情况下，每次提交都需要将依赖spark相关jar包上传到yarn集群中，为了节省提交时间和存储空间，将spark相关jar包上传到hdfs目录中，设置属性告知sparkapplilcation应用
+```shell
+#创建目录
+hdfs dfs -mkdir -p /spark/apps/jars/
+#上传spark的jar包
+hdfs dfs -put /export/server/spark-3.3.2-bin-hadoop3/jars/* /spark/apps/jars/
+```
+
+* 启动namenode和datanode
+```shell
+hadoop-daemon.sh start namenode
+hadoop-daemon.sh start datanode
+```
+* 启动yarn服务
+```shell
+yarn-daemon.sh start resourcemanager
+yarn-daemon.sh start nodemanager
+```
+* 启动mrhistoryserver服务
+```shell
+ mr-jobhistory-daemon.sh start historyserver
+```
+* 启动spark的historyserver
+```shell
+./sbin/start-history-server.sh
+```
+
+* 使用hadoop的yarn进行资源调度
 ```shell
 ./bin/spark-submit --class org.apache.spark.examples.SparkPi\
  --master yarn \
  --deploy-mode cluster \
 ./examples/jars/spark-examples_2.12-3.3.2.jar \
 10
-# 使用yarn调度，使用集群模式
 ```
-端口号
+
+* 常见端口号
 spark-shell 查看任务状况端口号 4040
 spark master内部通信服务端口号 7077
 standalone 模式下soark master web端口号 8080
@@ -273,14 +350,14 @@ hadoop yarn任务运行情况查看端口号 8088
 > mesos
 
 
-基本的wordCount实现
+
+## 基本的wordCount实现
+* 本地文件系统读取数据
 ```scala
 //使用scala的集合处理方法来实现
 object SparkWordCount2 {
   def main(args: Array[String]): Unit = {
-
     //spark 框架
-
     //建立和spark框架的连接
     val sparkConf = new SparkConf().setMaster("local").setAppName("SparkWordCount")
     val sparkContext = new SparkContext(sparkConf)
@@ -312,38 +389,206 @@ object SparkWordCount2 {
   }
 }
 ```
+* 从hdfs读取数据
+
+拷贝hadoop etc/hadoop下的core-site.xml和hfds-site.xml，spark的conf下的log4j2.propeties到idea项目下的resource目录下
 ```scala
-//使用spark提供的api简化scala的集合聚合操作
-object SparkWordCount3 {
+import org.apache.spark.{SparkConf, SparkContext}
+
+/**
+ * @description: spark实现wordcount,连接hdfs从hdfs上读取文本文件，统计词频，然后将数据写回hdfs
+ * @author Administrator
+ * @date 2023/4/9 11:40
+ * @version
+ */
+object SparkWordCount {
+
   def main(args: Array[String]): Unit = {
+    //创建sc
+    val sparkConf = new SparkConf().setAppName("sparkWordCount").setMaster("local[2]")
+    val sc:SparkContext = new SparkContext(sparkConf)
+    //从hdfs读取文件
+    val inputRDD = sc.textFile("/spark/data/wordcount.txt")
+    //分析数据
+    val resultRDD = inputRDD.flatMap(line => line.trim.split("\\s+")).map(word =>(word,1)).reduceByKey((tmp,item) => tmp + item)
+    //简单遍历
+    resultRDD.foreach(tuple =>println(tuple))
+    //将结果保存到hdfs
+    resultRDD.saveAsTextFile(s"/spark/output/wc-output-${System.currentTimeMillis()}")
+    //关闭spark上下文
+    sc.stop()
+  }
+}
+  }
+}
+```
+* 求topN
+```scala
+    //方式1 .将tuple中的两个元素交换,并按降序排列,获取前3
+    val top3 = resultRDD.map(tuple => tuple.swap).sortByKey(ascending = false).take(3)
+    top3.foreach(tuple => println(tuple))
+    //方式2.
+    val top3_2 = resultRDD.sortBy(tuple => tuple._2, ascending = false)
+    top3_2.foreach(tuple => println(tuple))
+    //方式3 ，当数据量比较小时使用，top方法会将RDD数据都刷到内存中
+    val top3_3 = resultRDD.top(3)(Ordering.by(tuple => tuple._2))
+    top3_3.foreach(tuple => println(tuple))
+```
 
-    //spark 框架
+## spark应用的提交
+将上面的scala开发的程序打成jar包，提交运行到standalone集群或本地模式
+使用spark-submit提交jar程序到spark
+命令格式：
+```
+ ./bin/spark-submit [options] <app jar | python file | R file> [app arguments]
+ # options 包含三种参数： 基本参数，Driver Program相关参数，Executor相关参数
+  --master MASTER_URL
+  --class CLASS_NAME
+  --driver-memory MEM 
+  --driver-library-path
+```
+修改wordcount的代码,通过main参数列表传递输入输出信息
+```scala
+object SparkWordCount {
 
-    //建立和spark框架的连接
-    val sparkConf = new SparkConf().setMaster("local").setAppName("SparkWordCount")
-    val sparkContext = new SparkContext(sparkConf)
+  def main(args: Array[String]): Unit = {
+    if(args.length < 2){
+      println("Usage :spark-submit <input> <ouput>")
+      System.exit(1)
+    }
 
-    //执行业务操作
-    val lines: RDD[String] = sparkContext.textFile("datas")
-    //读取文件，一行一行的读取,将一行数据进行拆分，进行分词,扁平化
-    val words: RDD[String] = lines.flatMap(_.split("\\s+"))
-//    ('a'->1,'a'->1,'b'->1,'c'->1) 这种格式
-    val wordToOne = words.map(word => (word, 1))
-    //spark可以将分组和聚合使用一个方法实现
-    //相同的key的数据，可以对value reduce聚合
-    val wordToCount = wordToOne.reduceByKey(_ + _)
-//    //将转换结果输出
-    val array: Array[(String, Int)] = wordToCount.collect()
-    array.foreach(println)
-    //关闭连接
-    sparkContext.stop()
+    //创建sc
+//    val sparkConf = new SparkConf().setAppName("sparkWordCount").setMaster("local[2]")
+    val sparkConf = new SparkConf().setAppName(this.getClass.getSimpleName.stripSuffix("$")).setMaster("local[2]")
+    val sc:SparkContext = new SparkContext(sparkConf)
+    //从hdfs读取文件
+//    val inputRDD = sc.textFile("/spark/data/wordcount.txt")
+//通过参数传入
+    val inputRDD = sc.textFile(s"${args(0)}")
+    //分析数据
+    val resultRDD = inputRDD.flatMap(line => line.trim.split("\\s+")).map(word =>(word,1)).reduceByKey((tmp,item) => tmp + item)
+    //简单遍历
+    resultRDD.foreach(tuple =>println(tuple))
+    //将结果保存到hdfs
+//    resultRDD.saveAsTextFile(s"/spark/output/wc-output-${System.currentTimeMillis()}")
+    //通过参数传递指定
+    resultRDD.saveAsTextFile(s"${args(1)}-${System.currentTimeMillis()}")
+
+    //关闭spark上下文
+    sc.stop()
   }
 }
 ```
 
+将打好的jar包放入到hdfs的/spark/apps目录下
+提交任务 可以通过master来指定集群
+```shell
+## local mode
+./bin/spark-submit --master 'local[2]' \ 
+--class com.steven.wordcount.SparkWordCount \
+hdfs://node1:8020/spark/apps/ spark-demo.jar /spark/data/wordcount.txt /spark/output/wc-output-
 
-## spark 离线分析
+## standalone HA，--queue default 任务默认队列，公平调度 --supervise 运行失败后会重启
+./bin/spark-submit \
+ --master 'spark://node1:7077,node2:7077' \
+  --class com.steven.wordcount.SparkWordCount \
+  --deploy-mode cluster \
+  --supervise \
+  --driver-memory 512m \
+  --executor-memory 512m \
+  --executor-cores 1 \
+  --queue default \
+  --total-executor-cores 2 \
+   hdfs://node1:8020/spark/apps/spark-demo.jar  /spark/data/wordcount.txt /spark/output/wc-output-
 
-## spark 实时分析 spark streaming/structredStreaming
+## 使用yarn来运行词频统计 ,
+./bin/spark-submit \
+ --master yarn \
+  --class com.steven.wordcount.SparkWordCount \
+  --deploy-mode cluster \
+  --supervise \
+  --driver-memory 512m \
+  --executor-memory 512m \
+  --executor-cores 1 \
+  --total-executor-cores 2 \
+  --queue default \
+   hdfs://node1:8020/spark/apps/spark-demo.jar  /spark/data/wordcount.txt /spark/output/wc-output-   
+```
+
+## 部署模式 DeployMode ,实际生产中使用cluster，测试开发时使用client
+使用spark-submit 提交应用运行时，指定参数 --deploy-mode,有两个值可选
+> client :driver program进程运行在提交应用的客户端Client，这种模式下：
+  * driver进程名称为`SparkSubmit`（当在yarn上运行时会有一个ExecutorLanucher）
+  * executor进程名称为`CoarseGrainedExecutorBackend` 或 `YarnCoarseGrainedExecutorBackend`
+
+> cluster: driver Program 进程运行在集群从节点上(worker或nodemanager)
+  * driver进程名称为`driverwrapper`
+  * executor进程名称为`CoarseGrainedExecutorBackend`或 `YarnCoarseGrainedExecutorBackend`
+
+## 应用程序运行在yarn上，yarn的组成
+1. AppMaster,应用管理者，负责整个应用运行时资源申请（RM）以及Task运行和监控
+2. 启动进程process，运行Task任务
+
+## spark应用运行在spark集群上的组成
+1. Driver program 应用管理者，负责整个应用运行时资源申请及Task运行和监控（申请运行Executor）
+2. Executors，进程运行Task任务和缓存数据
+
+* 将spark应用运行在yarn集群上时，上面的四个进程都要存在(AppMaster和Driver Program存在冲突)，会存在冲突，这时：
+1. 当--deploy-mode 设置成cluster时，AppMaster与Driver合体进行资源申请，运行Executors，调度Job执行
+2. 当--deploy-mode 设置成client时，由AppMaster向RM申请资源，运行Executor，由Driver 调度Job执行
+
+## spark应用在yarn上运行的流程
+* client模式：
+1. driver进程启动，并向resourceManager申请资源
+2. resourceManger分配container通知nodeManager启动ApplicationMaster，此时applicationMaster相当于一个ExecutorLanucher，只负责向ResourceManager申请Executor内存
+3. resourceMnager收到ApplicationMaster的资源申请后分配container，ApplicationMaster在资源分配指定的nodeManager上启动Executor进程
+4. executor进程启动后向Driver反向注册，Executor全部注册完成后，Driver开始执行main函数
+5. 之后执行到Action算子时触发一个JOB（当执行RDD的api没有返回值，返回值不是RDD时，会触发一个新的job），并根据宽依赖开始划分Stage，每个stage生成对应的TaskSet，之后将Task分发到各个Executor上执行
+缺点：
 
 
+* cluster模式
+1. 任务提交后会和ResourceManager通信并启动ApplicationMaster
+2. resourceManger分配container，通知nodeManager启动ApplicationMaster，此时ApplicationMaster相当于Driver
+3. driver启动后向ResourceManager申请executor内存，resourcemanager接收到applicationmaster的资源申请后会分配container，然后再合适的nodemanager上启动executor进程
+4. executor进程启动后向Driver反向注册，
+5. Executor全部注册完成后，Driver开始执行main函数，
+6. 之后执行到Action算子时触发一个JOB（当执行RDD的api返回值不是RDD时，会触发一个新的job），并根据宽依赖开始划分Stage，每个stage生成对应的TaskSet，之后将Task分发到各个Executor上执行
+
+* client模式driver运行在本地，导致本地机器负担过大，网卡流量激增
+* 通常情况下dirver和yarn集群运行在同一个机房内性能上来说会更好
+
+## wordcount中的main函数代码
+1. sparkContext的构建与关闭都是在Driver中执行的
+2. 其他的关于数据处理的代码（关于RDD的代码，返回值是RDD的RDD方法）都是在Executor上执行
+3. 当RDD.take，RDD.collect等返回值非rdd代码执行时，会在driver上执行
+
+spark应用运行在yarn上的四个JVM进程
+1. Driver Program
+2. ResourceManager
+3. NodeManager
+4. Executor
+
+## RDD --Resilient Distributed Dataset --弹性分布式数据集
+spark-core的核心抽象概念：
+1. 数据集：RDD
+2. 共享变量：
+    * Accumulators --累加器
+    * Broadcast variables --广播变量
+
+### RDD的设计核心点
+* 内存计算
+* 适合集群
+* 有容错
+
+不可变immutable分区partition的集合collection，可以并行parallel进行计算
+RDD将spark的自动容错，位置感知，任务调度，失败重试等实现细节都隐藏起来，程序员不需要再考虑这些问题，只需要专注于任务的开发
+
+### RDD的特性
+* 分区列表--是个分区的列表集合
+* 计算函数--一个函数可以计算每个分片
+* 依赖关系一个RDD依赖于其他RDD的计算结果
+* 分区函数--（可选）键值对（如hash）的分区器，只有key value的RDD才有分区器
+* 最佳位置（可选）计算每个分区的首选位置列表(例如，HDFS文件的块位置)，找到计算成本最小的位置（例如分区在hdfs的node1上，则分区的task运行在node1上）
+
+### RDD的创建
