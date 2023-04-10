@@ -592,3 +592,62 @@ RDD将spark的自动容错，位置感知，任务调度，失败重试等实现
 * 最佳位置（可选）计算每个分区的首选位置列表(例如，HDFS文件的块位置)，找到计算成本最小的位置（例如分区在hdfs的node1上，则分区的task运行在node1上）
 
 ### RDD的创建
+* 并行化本地集合，将本地集合数据存储到RDD中，测试开发
+* 加载外部存储系统数据，如hdfs，hbase，elasticsearch，kafka等  
+
+并行化本地集合
+```scala
+    val sc:SparkContext = {
+      val sparkConf = new SparkConf().setAppName(this.getClass.getSimpleName.stripSuffix("$")).setMaster("local[2]")
+      //有则获取context，没有则获取
+      val context = SparkContext.getOrCreate(sparkConf)
+      context
+    }
+        //创建本地集合
+    val seq = (1 to 10) .toSeq
+    //本地集合转化为rdd
+    val inputRDD:RDD[Int] = sc.parallelize(seq, numSlices = 2)
+    inputRDD.foreach(i => println(i))
+//makeRDD方式创建
+//    val inputRDD = sc.makeRDD(seq)
+    inputRDD.foreach(i => println(i))
+    //读取文件系统
+    val inputRDD2 = sc.textFile(path = "datas/")
+    inputRDD2.foreach(item => println(item))
+    //关闭资源
+    sc.stop()
+```
+读取小文件,设置分区数
+```scala
+    //读取小文件数据
+    val inputRDD:RDD[(String,String)] = sc.wholeTextFiles("datas/", minPartitions = 2)
+    println(s"partition:${inputRDD.getNumPartitions}")
+    inputRDD.take(10).foreach(println(_))
+```
+### RDD分区数配置
+* rdd的分区数尽量等于集群中cpu的核心数
+* 实际中为了更加充分的压榨cpu的计算资源，会把并行度设置为cpu核心数的2-3倍
+* rdd分区数和启动时指定的核心数，调用方法时指定的分区数，文件数量的配置具体说明：
+    * 从hdfs上加载海量数据时，rdd分区数据为block数目
+    * 从hbase表加载数据时，分区数为表的region数目
+
+### RDD函数--算子
+1. RDD转换函数transformation，调用后产生一个新的RDD
+    * 所有的转换函数都是懒惰的
+  函数列表：
+  基本函数：
+    flatMap
+    map
+    filter
+    groupBy
+  分区函数
+    reduceByKey
+  数学函数：
+  Double函数：
+  Async函数：
+
+2. action动作函数，无返回值或返回值不是RDD，非懒惰加载
+    * 每个action函数都触发一个新的Job
+* RDD不存储真正计算的数据
+* RDD中所有的转换函数都是懒惰执行
+
