@@ -243,6 +243,17 @@ hadoop jar hadoop-mapreduce-examples-3.3.4.jar pi 2 2
 
 
 ## hdfs分布式文件系统基础 （hadoop distributed file system）
+hdfs的重要特征：
+* 主从架构
+* 分块存储 --block，默认128M
+* 副本机制 
+
+### hdfs中的一些
+* hdfs的namespace --支持传统的层次型文件组织结构
+* 元数据管理
+    * 文件自身属性，文件名称，权限，修改时间，文件大小，复制因子，数据块大小
+    * 文件块位置映射信息，文件块和datanode之间的映射信息，即哪个块存储在哪个节点上
+* 数据块存储： 由datanode节点承担，每个block可以在多个datanode上存储 
 传统文件系统通常是单机文件系统，都带有抽象的目录结构
 文件系统的数据和元数据
 *数据* ：存储的内容本身
@@ -269,13 +280,18 @@ hdfs提供统一的访问接口（nameNode），类似于普通的linux文件系
 * 分块存储 物理上分块存储（block 默认128M，hdfs-site.xml 的dfs.blocksize属性）
 * 副本机制 保证数据安全性，将副本放在不同的datanode上保证数据的安全
 * 元数据记录 文件自身属性信息（文件名称、文件大小、复制因子、块大小信息），文件块位置映射信息
-* 抽象统一的目录树结构9（namepsace） 与liunx目录类似
+* 抽象统一的目录树结构（namepsace） 与liunx目录类似
 
 hdfs shell
-基础命令： hadoop fs [option]
+基础命令： hdfs [options] subcommand [subcommand options]  
+subcommand命令格式: Admin commands ,client commands,daemon commands
 查看本地文件： hadoop fs -ls file:///
 查看hdfs ： hadoop fs -ls hdfs://node1:8020/
 默认查看hdfs根目录(读取环境变量中的fs.defaultFS)： hadoop fs -ls /
+命令之间的区别：
+* hadoop dfs 只能操作hdfs系统（包括与本地文件系统local fs间的操作），已经过时
+* hdfs dfs 只能操作与hdfs文件系统相关（包括与local fs间的操作），常用
+* hadoop fs 操作任意文件系统，不仅仅是hdfs文件系统
 
 ```shell
 hadoop fs -ls -h(人性化显示) -R（递归查看） /   #查看
@@ -288,7 +304,7 @@ hadoop fs -appendToFile <localsrc><localsrc2>... <dst> #将本地文件合并到
 hadoop fs -mv [src] [dst] #linux mv 重命名
 ```
 
-hdfs常用命令
+常用文件操作命令
 ```shell
 hdfs dfs -ls /user  # 查看user下的文件列表信息
 hdfs dfs -lsr /user #递归查看user下文件列表信息
@@ -532,7 +548,7 @@ https://blog.csdn.net/Darlight/article/details/107787178
 
 安装hive
 修改配置文件：
-hive-en.sh
+hive-env.sh
 ```shell
 export HADOOP_HOME=/export/server/hadoop-3.3.4
 export HIVE_CONF_DIR=/export/server/apache-hive-4.0.0-alpha-2-bin/apache-hive-4.0.0-alpha-2-bin/conf

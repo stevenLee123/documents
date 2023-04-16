@@ -24,7 +24,7 @@
 * 时序数据
 有一个openTSDB模块，满足时许类场景需求
 * 推荐画像
-  用户画像，一个比较大的稀疏矩阵，蚂蚁金服的疯狂就是在hbase上构建
+  用户画像，一个比较大的稀疏矩阵，蚂蚁金服的风控就是在hbase上构建
 * 时空数据
   轨迹，气象，卫星类数据
 * Cubedb OLAP
@@ -49,7 +49,7 @@
     * hbase支持hdfs开箱即用
 * mapreduce
     * 通过mapreduce支持大规模并行处理，将hbase作为源和接收器
-* thrift /REST api
+* thrift（rpc框架） /REST api
 * 块缓存和布隆过滤器
 * 运行管理
 * 不支持ACID，支持单行数据的事务操作
@@ -117,23 +117,22 @@ export HBASE_MANAGES_ZK=false
 6. 兼容性检查
 ```xml
 <property>
-<name>hbase.rootdir</name>
-<value>hdfs://node1:8020/hbase</value>
+    <name>hbase.rootdir</name>
+    <value>hdfs://node1:8020/hbase</value>
 </property>
 <property>
-<name>hbase.cluster.distributed</name>
-<value>true</value>
+    <name>hbase.cluster.distributed</name>
+    <value>true</value>
 </property>
 
 <property>
-<name>hbase.zookeeper.quorum</name>
-<value>node1,node2,node3</value>
-<description>Comma separated list of servers in the ZooKeeper Quorum. For example, "host1.mydomain.com,host2.mydomain.com,host3.mydomain.com". By default this is set to localhost for local and pseudo-distributed modes of operation. For a fully-distributed setup, this should be set to a full list of ZooKeeper quorum servers. If HBASE_MANAGES_ZK is set in hbase-env.sh this is the list of servers which we will start/stop ZooKeeper on. </description>
+    <name>hbase.zookeeper.quorum</name>
+    <value>node1,node2,node3</value>
 </property>
 <property>
-<name>hbase.zookeeper.property.dataDir</name>
-<value>/export/data/zk/data</value>
-<description>Property from ZooKeeper's config zoo.cfg. The directory where the snapshot is stored. </description>
+    <name>hbase.zookeeper.property.dataDir</name>
+    <value>/export/data/zk/data</value>
+    <description>Property from ZooKeeper's config zoo.cfg. The directory where the snapshot is stored. </description>
 </property>
 <!-- 与web ui访问有关的配置 -->
 <property>
@@ -711,23 +710,23 @@ stoprow：  ^Azhangsan2021-12.
 
 rowkey设计：
 ^：ascii表的第一个字符
-^A^A(user)date(yyyy-MM-dd hh:mm:ss ms)
+`^A^A(user)date(yyyy-MM-dd hh:mm:ss ms)`
 
 统计2021年12月所有人消费的总金额
 上面的rowkey只能按用户进行扫描，无法满足统计所有人2021年12月的消费
 设计思想：**可以穷举的写在前面**
 将日期进行拆分，年月放在前面，中间放定长的用户名，后面放时间的后半部
-2021-12^A^Azhangsan-01 10:10:11
+`2021-12^A^Azhangsan-01 10:10:11`
 对与只查zhangsan的
-scan startrow => 2021-12^A^Azhangsan
-     stoprow  => 2021-12^A^Azhangsan.
+`scan startrow => 2021-12^A^Azhangsan`
+     `stoprow  => 2021-12^A^Azhangsan.`
 对与查所有人的
-scan startrow => 2021-12
-     stoprow  => 2021-12.  
+`scan startrow => 2021-12`
+     `stoprow  => 2021-12.  `
 
 添加预分区优化：在rowkey的前面添加分区号
-000-2021-12^A^Azhangsan-01 10:10:11 
-001-2021-12^A^Azhangsan-01 10:10:11 
+`000-2021-12^A^Azhangsan-01 10:10:11` 
+`001-2021-12^A^Azhangsan-01 10:10:11 `
   
 分区号 => hash(user+ date(MM))%120
 

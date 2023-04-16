@@ -326,7 +326,7 @@ val sum = getSum(11,121)
 ```
 
 方法属于类或对象
-> 以将函数对象赋值给一个变量，运行时，它是加载到jvm中的方法区
+> 可以将函数对象赋值给一个变量，运行时，它是加载到jvm中的方法区
 >可以将一个函数对象赋值给一个变量，运行时，它是加载到jvm堆内存中
 > 函数式一个对象，继承自FunctionN，函数对象有apply，curried，toString，tupled这些方法，方法则没有
 *函数是对象，方法属于对象*
@@ -527,6 +527,7 @@ object Demo03 {
 使用override重载属性,重载的属性值必须时val标记的，不能时var标记的
 要使用父类中的成员变量可以使用super.method
 scala编译器不允许使用super.val
+```scala
 object Demo04 {
   class Person7 {
     val name: String = "zhangsan"
@@ -556,6 +557,7 @@ object Demo04 {
     s.sayHello()
   }
 }
+```
 
 ### isInstanceOf 和asInstanceOf
 多态：用相同的接口去表示不同的实现
@@ -943,7 +945,7 @@ object Demo17 {
 ```
 
 trait实现责任链模式
-多个trait中出现同一个方法，且该方法最后都调用了父类中的某个方法，当类继承这多个trait后，旧可以依次调用多个trait中的此同一个方法，形成一个调用链
+多个trait中出现同一个方法，且该方法最后都调用了父类中的某个方法，当类继承这多个trait后，旧可以依次调用多个trait中的同一个方法，形成一个调用链
 **叠加特质，按从右往左的顺序执行trait的方法，然后执行，当子特质中的方法执行完毕后，最后执行父特质中的方法**
 ```scala
 object Demo18 {
@@ -966,7 +968,7 @@ object Demo18 {
       super.handle(data)
     }
   }
-  //按从右往左的顺序执行trait的方法，然后执行，当子特质中的方法执行完毕后，最后执行父特质中的方法
+  //按从右往左的顺序执行trait的方法，然后执行父特质中的被重写的方法，当子特质中的方法执行完毕后，最后执行父特质中的方法
   //叠加特质
   class Payment extends DataValidHandler with SingatureValidHandler{
     def pay(data:String): Unit ={
@@ -985,7 +987,7 @@ object Demo18 {
 trait的构造机制
 每个特质只有一个无参构造器
 遇到一个类继承另一个类及多个trait的情况，当创建类的实例时，它的构造器执行顺序如下：
-1. 执行父类的构造球
+1. 执行父类的构造器
 2. 按照从左到右的顺序，依次执行trait的构造器
 3. 如果trait有父trait，先执行父trait的构造器
 4. 如果有多个trait有相同的父trait，则父trait的构造器只初始化一次
@@ -1259,7 +1261,7 @@ object Demo27 {
 ```
 增删改元素
 += 添加单个元素
--= 删除耽搁元素
+-= 删除单个元素
 ++= 追加一个数组到变长数组中
 --= 移除变长数组中的指多个元素
 ```scala
@@ -1438,7 +1440,7 @@ object Demo36 {
     //获取元素前三个元素，前缀元素
     println("===="+ list1.take(5))
     //获取后缀元素，前三个元素是前缀，其他的都是后缀元素
-    println(list1.drop(10))
+    println(list1.drop(3))
   }
 }
 ```
@@ -1515,29 +1517,27 @@ object Demo40 {
 ```
 ### set集合
 无序，唯一
-不可变集Set
+可变集Set
+
 ```scala
+import scala.collection.mutable
+import scala.collection.mutable.Set
+
 object Demo41 {
   def main(args: Array[String]): Unit = {
-    //不可变集
-    val set1 = Set[Int](10)
-    println(s"set1:${set1}")
-    val set2 = Set(1,3,4,5,6,5)
-    println(s"set2:${set2}")
-    //获取大小
-    println(s"size:${set1.size}")
-    println(s"size:${set2.size}")
-    //遍历
-    for(i <- set2) println(i)
-    //移除元素
-    val set3 = set2 - 3
-    println(s"set3:${set3}")
-    //拼接set
-    val set4 = set2 ++ set1
-    println(s"set4:${set4}")
-    //拼接list
-    val set5 = set2 ++ List(7,8,9)
-    println(s"set5:${set5}")
+    //可变集
+    val set1 = mutable.Set[Int](1,2,3,4)
+    //添加
+    set1 += 5
+    //添加集
+    set1 ++= mutable.Set(6,7,8)
+    //添加list
+    set1 ++= List(9,10,11)
+    //移除
+    set1 -= 1
+    //移除集合
+    set1 --= List(2,3,4)
+    println(set1)
   }
 }
 ```
@@ -2097,7 +2097,8 @@ object Demo65 {
   }
 }
 ```
-```结合map使用
+```scala
+//结合map使用
 //偏函数
 object Demo66 {
   def main(args: Array[String]): Unit = {
@@ -2881,12 +2882,10 @@ object Demo101 {
 }
 //List(11, 22, 33, 23, 45, 100, 200)
 ```
-* 利用偏函数筛选元素 collct方法
+* 利用偏函数筛选元素 collect方法
 ```scala
 //traversable 拼接
 object Demo102 {
-
-
   def main(args: Array[String]): Unit = {
     val t1 = (1 to 10).toTraversable //底层是Vector
     val t2 = Traversable(1,2,3,4,5,6,7,8,9,10) //底层是List
