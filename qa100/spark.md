@@ -1918,7 +1918,7 @@ saprk中各个stage的并行度是以job的最大并行度为准
 sparkStreaming 的数据结构DStreaming
 structuredStreaming 的数据结构DataFrame，属于sparksql的一部分
 
-### saprk streaming
+## saprk streaming
 * 数据结构：Dstreaming
 * 流处理入口： StreamingContext
 * Lambda架构：
@@ -2532,9 +2532,9 @@ pom依赖
 使用优化后的reduceByKeyAndWindow重载函数
 
 
-#### 偏移量管理
+### 偏移量管理
 在对kafka数据进行读取时，需要对消费的偏移量进行管理，来保证因为停机导致的消费信息偏移量丢失从而导致的窗口消费数据出现不准的情况
-有两种方式实现偏移量的管理：
+有三种方式实现偏移量的管理：
 1. 设置检查点checkpoint，将消费偏移量写入hdfs文件系统中当出现停机恢复时从hdfs文件系统中恢复消费偏移量
 检查点存储的数据信息： 
   * 元数据，用户恢复driver
@@ -2774,7 +2774,6 @@ import java.sql.DriverManager
  * @Author: lijie3
  */
 object Offsetutils {
-
   /**
    * 加载偏移量
    * @param topicNames
@@ -2826,15 +2825,439 @@ object Offsetutils {
   }
 }
 ```
-
-
-
-
-
-
+3. 让kafka自己管理偏移量
+每批次rdd数据处理完成后，异步提交偏移量到kafka
 
 
 ## StructedStreaming
+structedStreaming是spark sql的一部分
+spark2.4版本structedStreaming添加continues processing，类似于storm和flink的计算引擎，对流数据的处理是一条一条的处理
+默认情况下StructedStreaming与spark streaming一样都是微批处理
+structed Streaming默认就有状态的保存
+将批处理和流处理统一
+数据结构：DataFrame/DataSet，流式表
+如果设置了检查点，下次重启时会自动加载偏移量和状态信息
+基于事件时间的窗口分析
+流数据去重
+相关论文： the dataflow model
+
+* 增量查询模型，在新增的流数据不断执行增量查询
+* 支持端到端的输出
+* 复用spark sql的执行引擎
+
+### 编程模型
+结构化流将流数据看作一个不断增长的表（unbouned table），进行增量的查询，将结果放入结果表（result table）中，输出时设置输出（output）模式（结果表的数据是全部输出，还是有更新输出还是追加输出）
+
+* 官方示例
+```shell
+> nc -lk 9999
+## 结构化流不需要receiver，这里只需要两个线程，一个用来接收数据，一个用户来进行数据处理
+> ./bin/run-example --master 'local[2]' --conf spark.sql.shuffle.partitions=2 \
+org.apache.spark.examples.sql.streaming.StructuredNetworkWordCount \
+localhost 9999
+```
+
+* 编程实现wordcount,使用三种模式进行输出
+```scala
+import org.apache.spark.sql.streaming.{OutputMode, StreamingQuery}
+import org.apache.spark.sql.{DataFrame, SparkSession}
+
+/**
+ * @Description: 使用结构化流处理wordcount
+ * @CreateDate: Created in 2023/4/17 12:57 
+ * @Author: lijie3
+ */
+object StructedStreamWc01 {
+
+  def main(args: Array[String]): Unit = {
+
+    //构建sparkSession
+    val sparkSession: SparkSession =
+      SparkSession.builder()
+        .appName(this.getClass.getSimpleName.stripSuffix("$"))
+        .master("local[2]")
+        .config("spark.sql.shuffle.partitions","2")
+        .getOrCreate()
+    import sparkSession.implicits._
+
+    //从tcp socket读取流数据
+    val inputStreamDF: DataFrame = sparkSession
+      .readStream.format("socket")
+      .option("host", "localhost").option("port", 9999)
+      .load()
+    //处理数据
+
+    val frame: DataFrame = inputStreamDF
+      .as[String]
+      .filter(line => line != null && line.trim.nonEmpty)
+      .flatMap(line => line.trim.split("\\s+"))
+      .groupBy($"value").count()
+
+    //将结果进行输出
+    val query: StreamingQuery = frame
+
+      .writeStream
+      //追加模式不支持聚合
+//      .outputMode(OutputMode.Append())
+      //完全模式,将resulttable中的更新数据进行输出
+//      .outputMode(OutputMode.Complete())
+      //update 更新模式，当resulttable中更新数据时进行输出
+      .outputMode(OutputMode.Update())
+      .format("console").option("numRows", "20")
+      .option("truncate", "false").start()
+    query.awaitTermination()
+    query.stop()
+  }
+}
+```
+
+### structedStreaming支持的数据源
+file source 文件数据源，支持容错
+socket source socket数据源
+rate source
+kafka source kafka数据源
+
+file数据源
+```scala
+object StructedStreamFile02 {
+
+  def main(args: Array[String]): Unit = {
+
+    //构建sparkSession
+    val sparkSession: SparkSession =
+      SparkSession.builder()
+        .appName(this.getClass.getSimpleName.stripSuffix("$"))
+        .master("local[2]")
+        .config("spark.sql.sources.default", "org.apache.spark.sql.execution.datasources.csv.CSVFileFormat")
+        .config("spark.sql.shuffle.partitions","2")
+        .getOrCreate()
+    import sparkSession.implicits._
+
+    val csvSchema = new StructType()
+      .add("Date",StringType,nullable = false)
+      .add("Country",StringType,nullable = false)
+      .add("Confirmed",IntegerType,nullable = false)
+      .add("Cases",IntegerType,nullable = false)
+      .add("Deaths",IntegerType,nullable = false)
+      .add("New Cases",IntegerType,nullable = false)
+      .add("Country Population",IntegerType,nullable = false)
+
+    //从文件读取流数据
+    val inputStreamDF: DataFrame = sparkSession
+      .readStream
+      .format("org.apache.spark.sql.execution.datasources.csv.CSVFileFormat")
+      .option("sep",",")
+      .option("header","true")
+      .schema(csvSchema)
+      .csv("datas/csv")
+    //处理数据
+    //..... 
+    //将结果进行输出
+    val query: StreamingQuery = inputStreamDF
+
+      .writeStream
+      //追加模式不支持聚合
+//      .outputMode(OutputMode.Append())
+      //完全模式,将resulttable中的更新数据进行输出
+//      .outputMode(OutputMode.Complete())
+      //update 更新模式，当resulttable中更新数据时进行输出
+      .outputMode(OutputMode.Update())
+      .format("console").option("numRows", "20")
+      .option("truncate", "false").start()
+    query.awaitTermination()
+    query.stop()
+  }
+}
+```
+rate source 时间戳和数字
+```scala
+object StructedStreamRate03 {
+
+  def main(args: Array[String]): Unit = {
+
+    //构建sparkSession
+    val sparkSession: SparkSession =
+      SparkSession.builder()
+        .appName(this.getClass.getSimpleName.stripSuffix("$"))
+        .master("local[2]")
+        .config("spark.sql.shuffle.partitions","2")
+        .getOrCreate()
+
+
+
+    //从文件读取流数据
+    val inputStreamDF: DataFrame = sparkSession
+      .readStream
+      .format("rate")
+      .option("rowsPerSecond","10")
+      .option("rampUpTime","0s")
+      .option("numPartitions","2")
+      .load()
+    //处理数据
+
+
+    //将结果进行输出
+    val query: StreamingQuery = inputStreamDF
+
+      .writeStream
+      //追加模式不支持聚合
+      .outputMode(OutputMode.Append())
+      //完全模式,将resulttable中的更新数据进行输出
+//      .outputMode(OutputMode.Complete())
+      //update 更新模式，当resulttable中更新数据时进行输出
+//      .outputMode(OutputMode.Update())
+      .format("console").option("numRows", "20")
+      .option("truncate", "false").start()
+    query.awaitTermination()
+    query.stop()
+  }
+}
+```
+
+**query的设置**
+* writeStream：返回DataStreamWriter对象
+* ouputMode：输出模式设置 (有聚合不能使用append模式，没有聚合不能用complete模式)
+* queryName：查询名称
+* triggerInternal：触发时间间隔，有三种模式：固定时间间隔触发一次Trigger.processing，一次性微批，连续处理 Trigger.Continuing
+* checkpointLocation：检查点,使用检查点和预写日志wal进行故障恢复，保证流的继续运行时数据的正确性
+* outputSink：输出的目的地
+示例1
+```scala
+//将结果进行输出
+    val query: StreamingQuery = frame
+
+      .writeStream
+      //追加模式不支持聚合
+//      .outputMode(OutputMode.Append())
+      //完全模式,将resulttable中的更新数据进行输出
+//      .outputMode(OutputMode.Complete())
+      //update 更新模式，当resulttable中更新数据时进行输出
+      .outputMode(OutputMode.Update())
+      //设置查询名称
+      .queryName("query-wordcount")
+      //设置触发器
+      .trigger(Trigger.ProcessingTime("5 seconds"))
+      .format("console").option("numRows", "20")
+      //设置检查点目录
+      .option("checkpointLocation","datas/structed/ckpt-wordcount")
+      .option("truncate", "false").start()
+```
+输出终端
+支持文件、控制台、
+memory sink --将流数据输出到内存中作为表存储，查询时可以直接使用sql查询指定的queryName
+
+foreachBatch sink --批次保存
+
+```scala
+  def main(args: Array[String]): Unit = {
+
+    //构建sparkSession
+    val sparkSession: SparkSession =
+      SparkSession.builder()
+        .appName(this.getClass.getSimpleName.stripSuffix("$"))
+        .master("local[2]")
+        .config("spark.sql.shuffle.partitions","2")
+        .getOrCreate()
+    import sparkSession.implicits._
+
+    //从tcp socket读取流数据
+    val inputStreamDF: DataFrame = sparkSession
+      .readStream.format("socket")
+      .option("host", "localhost").option("port", 9999)
+      .load()
+    //处理数据
+
+    val frame: DataFrame = inputStreamDF
+      .as[String]
+      .filter(line => line != null && line.trim.nonEmpty)
+      .flatMap(line => line.trim.split("\\s+"))
+      .groupBy($"value").count()
+
+    //将结果进行输出
+    val query: StreamingQuery = frame
+
+      .writeStream
+      //追加模式不支持聚合
+//      .outputMode(OutputMode.Append())
+      //完全模式,将resulttable中的更新数据进行输出
+//      .outputMode(OutputMode.Complete())
+      //update 更新模式，当resulttable中更新数据时进行输出
+      .outputMode(OutputMode.Update())
+      //设置查询名称
+      .queryName("query-wordcount")
+      //设置触发器
+      .trigger(Trigger.ProcessingTime("5 seconds"))
+//      使用foreach保存数据到mysql中
+      .foreach(new MySQLForeachWriter)
+      //设置检查点目录
+      .option("checkpointLocation","datas/structed/ckpt-wordcount5")
+      .option("truncate", "false").start()
+    query.awaitTermination()
+    query.stop()
+  }
+```
+
+foreach sink --每一条进行保存
+```scala
+  def main(args: Array[String]): Unit = {
+
+    //构建sparkSession
+    val sparkSession: SparkSession =
+      SparkSession.builder()
+        .appName(this.getClass.getSimpleName.stripSuffix("$"))
+        .master("local[2]")
+        .config("spark.sql.shuffle.partitions","2")
+        .getOrCreate()
+    import sparkSession.implicits._
+
+    //从tcp socket读取流数据
+    val inputStreamDF: DataFrame = sparkSession
+      .readStream.format("socket")
+      .option("host", "localhost").option("port", 9999)
+      .load()
+    //处理数据
+
+    val frame: DataFrame = inputStreamDF
+      .as[String]
+      .filter(line => line != null && line.trim.nonEmpty)
+      .flatMap(line => line.trim.split("\\s+"))
+      .groupBy($"value").count()
+
+    //将结果进行输出
+    val query: StreamingQuery = frame
+
+      .writeStream
+      //追加模式不支持聚合
+//      .outputMode(OutputMode.Append())
+      //完全模式,将resulttable中的更新数据进行输出
+//      .outputMode(OutputMode.Complete())
+      //update 更新模式，当resulttable中更新数据时进行输出
+      .outputMode(OutputMode.Update())
+      //设置查询名称
+      .queryName("query-wordcount")
+      //设置触发器
+      .trigger(Trigger.ProcessingTime("5 seconds"))
+//      使用foreach保存数据到mysql中
+      .foreachBatch((batchDF:DataFrame,batchId:Long) =>{
+        println(s"batchid :${batchId}")
+        if(!batchDF.isEmpty){
+          batchDF
+            //降低分区数
+            .coalesce(1)
+            .write
+            //使用overwrite会重新创建一个张表
+            .mode(SaveMode.Overwrite)
+            .format("jdbc")
+            .option("driver","com.mysql.cj.jdbc.Driver")
+            .option("url","jdbc:mysql://localhost:3306/bigdata")
+            .option("user","root")
+            .option("password","dxy123456")
+            .option("dbtable","wordcount2")
+            .save()
+        }
+      })
+      //设置检查点目录
+      .option("checkpointLocation","datas/structed/ckpt-wordcount6")
+      .option("truncate", "false").start()
+    query.awaitTermination()
+    query.stop()
+  }
+```
+
+**容错语义**
+在streaming 的处理的三个阶段，从数据源接收数据（source），经过数据处理分析（streaming execution），到最终数据输出（sink）仅被处理一次，是最好的状态
+* at most once 最多一次，可能出现数据丢失
+* at least once 至少一次，数据至少消费一次，可能出现多次消费
+* exactly once 精确消费一次
+
+structed streaming 支持offset，让spark追踪读取数据源的位置
+基于checkpoint和wal来持久化保存每个trigger interval内处理的offset的范围
+sink被设计成支持多次计算处理时保持幂等性
+
+### 集成kafka
+* 从kafka消费数据
+* 向kafka写入数据
+
+创建topic
+```shell
+./bin/kafka-topics.sh --create --bootstrap-server localhost:9092 --replication-factor 1 --partitions 3 --topic wordTopic
+```
+pom文件依赖
+```xml
+<dependency>
+    <groupId>org.apache.spark</groupId>
+    <artifactId>spark-sql-kafka-0-10_2.12</artifactId>
+    <version>3.3.2</version>
+</dependency>
+```
+
+读取topic数据输出到控制台
+```scala
+object KafkaSource01 {
+  def main(args: Array[String]): Unit = {
+    //构建sparkSession
+    val sparkSession: SparkSession =
+      SparkSession.builder()
+        .appName(this.getClass.getSimpleName.stripSuffix("$"))
+        .master("local[2]")
+        .config("spark.sql.shuffle.partitions", "2")
+        .getOrCreate()
+
+
+    import sparkSession.implicits._
+
+    //从kafka读取数据
+    val kafkaStreamDF: DataFrame = sparkSession.readStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("subscribe", "wordTopic")
+      .load()
+    // 转换消息格式，取value值
+    val inputStreamDF: Dataset[String] = kafkaStreamDF
+      .selectExpr("CAST(value as STRING)")
+      .as[String]
+
+    //处理数据
+    val frame: DataFrame = inputStreamDF
+      .as[String]
+      .filter(line => line != null && line.trim.nonEmpty)
+      .flatMap(line => line.trim.split("\\s+"))
+      .groupBy($"value").count()
+
+    //将结果进行输出
+    val query: StreamingQuery = frame
+      .writeStream
+      //追加模式不支持聚合
+      //      .outputMode(OutputMode.Append())
+      //完全模式,将resulttable中的更新数据进行输出
+      //      .outputMode(OutputMode.Complete())
+      //update 更新模式，当resulttable中更新数据时进行输出
+      .outputMode(OutputMode.Update())
+      .format("console").option("numRows", "20")
+      .option("truncate", "false").start()
+    query.awaitTermination()
+    query.stop()
+  }
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
