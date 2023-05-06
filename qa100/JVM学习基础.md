@@ -1,9 +1,21 @@
 # JVM
+
+学习路线
+![学习路线](./image/jvm%E5%AD%A6%E4%B9%A0%E8%B7%AF%E7%BA%BF.png)
+
 ## JVM 基础概念及调优
 ### 1. JVM组成
 > 类装载子系统 加载字节码文件放入方法区（元空间） （loading(加载) -> linking（链接） ->Intializtion（初始化））
 > 运行时数据区（方法区、java堆、java栈（线程独享）、本地方法栈、程序计数器（线程独享））
 > 字节码执行引擎 执行字节码、写程序计数器、执行垃圾收集线程进行垃圾回收
+
+### 2. 程序计数器
+* java的二进制字节码（即JVM指令，所有平台都是一致的）无法被操作系统直接执行，需要经过java的解释器解释成机器码，然后才能由CPU执行
+* 作用：程序计数器会记住下一条jvm指定的执行地址，通过寄存器实现
+* 特点
+  * 线程私有
+  * 不会存在内存溢出
+* 每个线程都会分配一个程序计数器，存储线程当前执行的位置，当线程出现切换时，程序计数器用于，一旦指令执行，程序计数器将更新到下一条指令，另外在线程恢复执行时指示能当前线程之行的位置，程序计数器的值是由字节码执行引擎来修改的 保存当前线程执行指令的地址，
 
 ### 2. java栈（先进后出）
 存放局部变量数据，分配给线程使用。一个方法对应一块栈帧内存空间
@@ -13,31 +25,98 @@
 > 动态链接 符号引用转化为直接引用
 > 方法出口 方法返回的位置
 另外栈中的引用对象的真实地址在堆中
-栈大小设置(-Xss 2MB)
+栈大小设置(-Xss 2MB) linux 下默认是1024KB
 栈溢出
 > 出现没有出口的递归(栈帧过多)，抛出StackOverflowError
 > 方法的执行超出了栈的大小（栈帧过大)，抛出StackOverflowError
 
+线程安全问题：
+方法内的局部变量如果没有出现逃逸的情况不会有线程安全的问题
 
-### 3. 程序计数器
-> 线程私有
-每个线程都会分配一个程序计数器，存储线程当前执行的位置，当线程出现切换时，程序计数器用于，一旦指令执行，程序计数器将更新到下一条指令，另外在线程恢复执行时指示能当前线程之行的位置，程序计数器的值是由字节码执行引擎来修改的 保存当前线程执行指令的地址，
+线程诊断与排查问题
+* 使用top命令定位哪个进程对CPU的占用过高
+* ps H -eo pid,tid,%cpu|grep pid 进一步定位哪个线程引起cpu占用过高
+* 使用jstack pid 查看线程详情，根据线程id找到有问题的线程，（可能是死锁，可能是死循环等问题），定位到线程行数
 
-### 4. 方法区（元空间）
+### 本地方法栈（native method stacks）
+* 为本地方法执行提供内存空间
+* 线程私有
+
+
+
+
+
+### 4. 方法区（hotspot 1.8之后是元空间，使用的是操作系统的本地内存）--存储类相关的信息
 线程共享
 虚拟机启动时创建
 存放类的元数据信息、运行时常量值、静态变量（可能存在对象，在方法中存放的也是变量的引用，真正的变量放在堆中）、字段和方法数据，以及方法和构造函数的代码，包括用于类和实例初始化及接口初始化的特殊方法
-方法区溢出，OutOfMemoryError
-> 设置的元空间太小(jdk8) -XX:MaxMetaspaceSize=100M - XX: -UseCompressedOops 抛出OutOfMemoryError
+* 运行时常量池 Stringtable，不在操作系统本地内存中，在堆（heap）中
 
-### 5. 本地方法 （native修饰的方法，没有方法体，调用本地库）
-> 线程私有
+* 设置的元空间太小(jdk8，默认没有大小限制) -XX:MaxMetaspaceSize=100M - XX: -UseCompressedOops 抛出OutOfMemoryError:metaspace(jdk1.6是 PermGen space)
+* 
 
+* 方法区溢出，OutOfMemoryError
+
+#### 常量池
+二进制字节码的组成 ： 类基本信息，常量池，类的方法定义，包含虚拟机的指令
+常量池的作用：为指令提供常量服务，以查表的方式查找到类名、方法名、参数类型、字面量等信息
+常量池是.class文件中的，当该类被加载时，他的常量池信息会放入运行时常量池，并将里面的符号地址变为真实的地址
+使用javap -v HelloWorld.class 查看类反编译后的详细信息
+
+**串池StringTable**
+运行时会将字符串常量放入StringTable中，运行时是懒加载的，只有用到时才会将串放入串池
+
+```java
+//字符串会放入StringTable串池中，在常量池中
+String a = "a";
+String b = "b";
+
+String ab = "ab";
+//创建c时首先会创建一个StringBuilder类并进行初始化，然后将a、b append到StringBuilder中，然后调用StringBuilder的toString方法，toString方法实际上是又创建了一个新的String对象,这时c是放在堆中的
+String c = a +b; 
+//返回false，因为c在堆中，而ab在常量池中
+c==ab
+//会直接使用常量池中的“ab”串，是javac在编译期的优化，结果在编译期确定为“ab”
+String d = "a"+ "b";
+//返回true，都在常量池中
+ab == d;
+
+
+
+```
+特性：
+* 常量池中的字符串仅是符号，第一次用到时才会变为对象
+* 利用串池的机制，来避免重复创建字符串对象
+* 字符串变量拼接的原理是StringBuilder（jdk1.8）
+* 字符串常量拼接的原理是编译期优化
+* 可以使用intern方法，主动将串池中还没有的字符串放入常量池中
+jdk 1.8 尝试将字符串对象放入串池，如果没有则放入，如果有则不放入，然后将串池中的对象返回
+jdk1.6 在串池中不存在串时会将字符串对象复制到串池中，
+```java
+String s = new String("a") + new String("b");
+//返回false，s在堆中，而StringTable中没有“ab”
+s == "ab"
+//jdk1.8将字符串对象尝试放入串池中，如果有就不放入，没有则放入（不入池则s还是在堆中），同时将串池的对象返回，这是s已经在串池中
+//jdk1.6将会拷贝字符串到常量池中，s还是在堆中
+s2 = s.intern();
+//StringTable中已经存在“ab”，返回true
+s2 == "ab"
+//StringTable中已经存在“ab”，返回true
+s == "ab"
+```
+* jdk7之前StringTable是放在永久代中，在jdk8中StringTable是放在堆中的，放在堆中是为了保证在垃圾回收时StringTable能及时被垃圾回收，而不需要在full GC时才被回收
+
+* 在jdk8中配置垃圾回收规则： -XX：+UseGCOverheadLimit （默认开启，可以使用-XX：-UseGCOverheadLimit关闭）  当jvm大量的时间花在垃圾回收（98%的时间）而只有少于2%的堆内存被垃圾回收，则jvm认为程序异常，jvm进程退出
+
+* StringTable是可以被垃圾回收的
+
+配置jvm打印垃圾回收的详情：
+-Xmx10m -XX:+PrintStringTableStatistics -XX:+PrintGCDetails -verbose:gc
 ### 6. 使用javap命令（将class文件转译为jvm虚拟机指令），结合jvm虚拟机能查看代码完整的之行流程
 
 ### 7. 堆 
-存放对象的内存区域
-线程共享的一块内存区域，虚拟机启动时创建，垃圾回收器管理的主要区域
+* 存放对象的内存区域
+* 线程共享的一块内存区域，虚拟机启动时创建，垃圾回收器管理的主要区域
 新生代 分为一个eden区、两个survivor区
 > eden 区，对象出生的区域
 > survivor 经过minior gc之后存活的类会从eden区移动到survivor区
@@ -51,13 +130,13 @@
 JVM诊断工具(jdk自带的一些常用的诊断工具)
 jps 查看java进程 `jps 【选项 】 [hostid]`
 jmap -heap pid 检测某一时刻的堆内存使用情况
-jconsole 图形化工具
+jconsole 图形化工具，查看堆内存占用，线程数量，类加载数量，cpu占用率
 jstat 统计jvm内存信息  `jstat 【选项】 【进程ID】 [间隔时间 ] [查询次数]`
 jinfo JVM参数查看和修改 `jinfo 【选项】【具体选项参数名】【进程ID】`
 jstack JVM线程信息监控 `jstack [ 选项 ] [进程ID]远程IP`
 
 VisualVM 通过安装各种插件实现对jvm的各种运行状态的实时监控
-
+可以通过dump内存快照（堆转储）查看大对象占用内存的情况
 arthas 阿里提供的jdk诊断工具，涵盖了几乎所有的jdk自带的诊断工具，同时可以很方便的查看死锁线程、修改应用中的某个类代码并动态编译和加载类到JVM
  * 启动： java -jar arthas-boot.jar
  * 查看全局信息（实时刷新）： dashboard
@@ -296,4 +375,14 @@ GC是需要代码运行到安全点或安全区域才能做
 jdk7之后字符串常量池重永久代的运行时常量池分离到堆里
 jdk8中，永久带被移除，运行时常量池在元空间，字符串常量池依然在堆里
 
+
+### JMX
+JMX(Java Management Extensions),Java管理扩展,是一个为应用程序植入管理功能的框架 
+
+Notification
+MBean之间的通信是必不可少的，Notification起到了在MBean之间沟通桥梁的作用。JMX 的通知由四部分组成：
+1、Notification这个相当于一个信息包，封装了需要传递的信息
+2、Notification broadcaster这个相当于一个广播器，把消息广播出。
+3、Notification listener 这是一个监听器，用于监听广播出来的通知信息。
+4、Notification filiter 这个一个过滤器，过滤掉不需要的通知。这个一般很少使用
 

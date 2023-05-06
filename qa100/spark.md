@@ -143,7 +143,7 @@ sc.textFile("/spark/datas/README.md").flatMap(_.split("\\s+")).map((_,1)).reduce
 主从架构，类似与hadoop的yarn架构，管理整个集群资源，分配资源给spark Application使用
 角色：
 * Master
-类似于ResourceManager，挂历所有资源状态，分配资源（内存，cpu核数）
+类似于ResourceManager，管理所有资源状态，分配资源（内存，cpu核数）
 * worker
 类似于nodeManager，管理每个节点中的资源，启动进程，执行task任务
 高可用，使用zk的强一致性实现自动切换故障主节点，实现故障转移
@@ -3202,8 +3202,6 @@ object KafkaSource01 {
         .master("local[2]")
         .config("spark.sql.shuffle.partitions", "2")
         .getOrCreate()
-
-
     import sparkSession.implicits._
 
     //从kafka读取数据
@@ -3241,6 +3239,190 @@ object KafkaSource01 {
 }
 ```
 
+kafka作为接收器
+处理流式数据时，先消费kafka 的数据，进行etl之后再写回kafka中
+```scala
+ def main(args: Array[String]): Unit = {
+    //构建sparkSession
+    val sparkSession: SparkSession =
+      SparkSession.builder()
+        .appName(this.getClass.getSimpleName.stripSuffix("$"))
+        .master("local[2]")
+        .config("spark.sql.shuffle.partitions", "2")
+        .getOrCreate()
+
+
+    import sparkSession.implicits._
+
+    //从kafka读取数据
+    val kafkaStreamDF: DataFrame = sparkSession.readStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("subscribe", "wordTopic")
+      .load()
+    // 转换消息格式，取value值
+    val inputStreamDF: Dataset[String] = kafkaStreamDF
+      .selectExpr("CAST(value as STRING)")
+      .as[String]
+
+    //处理数据
+    val frame: DataFrame = inputStreamDF
+      .as[String]
+      .filter(line => line != null && line.trim.nonEmpty)
+      .flatMap(line => line.trim.split("\\s+"))
+      .groupBy($"value").count()
+
+    //将结果进行输出,将数据写回到kafak中
+    val query: StreamingQuery = frame
+      .selectExpr("CAST(value AS STRING) AS key", "CAST(count AS STRING) AS value")
+      .writeStream
+      //追加模式不支持聚合
+      //      .outputMode(OutputMode.Append())
+      //完全模式,将resulttable中的更新数据进行输出
+      //      .outputMode(OutputMode.Complete())
+      //update 更新模式，当resulttable中更新数据时进行输出
+      .outputMode(OutputMode.Update())
+      .format("kafka")
+      .option("kafka.bootstrap.servers","localhost:9092")
+      .option("topic","etl-word-count")
+      .option("checkpointLocation","datas/structed/kafka-etl-wc-0001")
+      .start()
+    query.awaitTermination()
+    query.stop()
+  }
+```
+结构化流中可以使用sql和DSL的方式实现数据elt
+
+**对流数据进行去重**
+一个用户一天的最近一个小时或一天的访问统称为一次访问（UV），这时需要进行去重处理
+structed streaming 使用水位线进行去重
+
+**连续处理**
+默认情况下structed streaming还是使用的微批次进行处理，每次处理多条数据，实施性较低
+spark2.3引入的新功能，真正实现来一条数据处理一条数据，实实时性很高
+缺点：task的数量无法进行扩展，只支持从kafka读从kafka写数据
+启动连续流处理
+```scala
+spark
+  .readStream
+  .format("kafka")
+  .option("kafka.bootstrap.servers", "host1:port1,host2:port2")
+  .option("subscribe", "topic1")
+  .load()
+  .selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
+  .writeStream
+  .format("kafka")
+  .option("kafka.bootstrap.servers", "host1:port1,host2:port2")
+  .option("topic", "topic1")
+  .trigger(Trigger.Continuous("1 second"))  // only change in query
+  .start()
+```
+**时间窗口**
+spark streaming中时间窗口属于processingTime（基于处理时间的窗口）
+spark structedstreaming中时间窗口是eventTime（基于事件的时间窗口）
+
+三个时间的概念：
+* 事件时间eventTime，如订单下单时间
+* 注入时间 IngestionTime，流式应用从kafka消息队列中获取到的订单数据的时间
+* 处理时间 ProcessingTime，流式应用处理订单数据的时间
+
+实际项目中是将注入时间和处理时间进行合并，统称为处理时间
+
+使用时间时间生成窗口
+```scala
+def main(args: Array[String]): Unit = {
+
+    //构建sparkSession
+    val sparkSession: SparkSession =
+      SparkSession.builder()
+        .appName(this.getClass.getSimpleName.stripSuffix("$"))
+        .master("local[2]")
+        .config("spark.sql.shuffle.partitions","2")
+        .getOrCreate()
+    import sparkSession.implicits._
+
+    //从tcp socket读取流数据
+    val inputStreamDF: DataFrame = sparkSession
+      .readStream.format("socket")
+      .option("host", "localhost").option("port", 9999)
+      .load()
+    //处理数据
+    //数据格式 2021-10-10 12:10:11,dog cat
+    val frame: DataFrame = inputStreamDF
+      .as[String]
+      .filter(line => line != null && line.trim.split(",").length ==2)
+      .flatMap{line =>
+        val arr = line.trim.split(",")
+        arr(1).trim.split("\\s+").map(word => (Timestamp.valueOf(arr(0)),word))
+      }
+      .toDF("insert_timstamp","word")
+      .groupBy(
+        //设置基于事件事件的窗口
+        window($"insert_timstamp","10 seconds","5 seconds"),$"word"
+      ).count()
+      .orderBy($"window")
+
+    //将结果进行输出
+    val query: StreamingQuery = frame
+
+      .writeStream
+      //追加模式不支持聚合
+//      .outputMode(OutputMode.Append())
+      //完全模式,将resulttable中的更新数据进行输出
+      .outputMode(OutputMode.Complete())
+      //update 更新模式，当resulttable中更新数据时进行输出
+//      .outputMode(OutputMode.Update())
+      .trigger(Trigger.ProcessingTime("5 seconds"))
+      .format("console").option("numRows", "20")
+      .option("truncate", "false").start()
+    query.awaitTermination()
+    query.stop()
+  }
+```
+窗口生成规则：通过滑动时间和窗口时间进行计算
+
+**延迟数据处理**
+* 由于统计的数据是放在内存中的，如果每个时间窗口都保存会导致大量的内存消耗 --- 抛弃时间久远的状态
+* 由于数据延迟可能导致流的性能问题 --- 抛弃超过时间阈值的延迟数据
+
+设置水位线（watermarking），当延迟的数据的时间超出水位线，就不再计算，对数据进行丢弃
+水位线：让spark sql引擎自动追踪数据中当前时间时间，依据规则清除
+通过上一次批最大的事件时间，向前推算出需要计算的最小的事件时间，小于最小事件时间的数据直接丢弃
+指定watermark
+```scala
+    //处理数据
+    //数据格式 2021-10-01 12:10:11,dog cat
+    val frame: DataFrame = inputStreamDF
+      .as[String]
+      .filter(line => line != null && line.trim.split(",").length ==2)
+      .flatMap{line =>
+        val arr = line.trim.split(",")
+        arr(1).trim.split("\\s+").map(word => (Timestamp.valueOf(arr(0)),word))
+      }
+      .toDF("insert_timstamp","word")
+      .groupBy(
+        //设置基于事件事件的窗口
+        window($"insert_timstamp","10 seconds","5 seconds"),$"word"
+      ).count()
+      //设置水位线，超过最小事件事件的数据将会丢弃
+      .withWatermark("insert_timstamp","30 second")
+      .orderBy($"window")
+```
+**天猫双十一的实时大屏统计**
+* 订单数据首先存入RDMBS，通过canal监控mysql的binlog日志发送到kafka中
+* 使用spark/flink 对kafka数据读取并进行实时的etl
+* 将etl的结果数据以json的格式放入kafka中
+* 从kafka中读取etl的json数据，将数据写入es和hbase中，进行增量存储
+* 从kafka中读取etl中json数据并实现实时的报表
+
+
+**流数据的停止**
+使用yarn停止
+yarn application -kill applicationid
+优雅停止：
+扫描hdfs中的某个文件是否存在，如果文件存在则表示需要将应用停止，使用streaming/structed streaming 的优雅停机
+
+### spark集成es
 
 
 

@@ -40,17 +40,58 @@
 **数据分析流程**
 明确分析的目的和思路 -> 数据搜集 -> 数据处理（对数据进行结构化处理） ->数据分析 -> 数据展现（数据展现） -> 数据分析报告
 
-**大数据的特征**
+**大数据的特征 5V**
 > volume 数据体量大
 > variety 数据种类多
 > value 低价值密度（需要对价值进行挖掘）
 > velocity 增长速度快、获取速度快、处理速度快
 > veracity 数据的质量 数据准确性、数据可信赖度
 
+**应用场景**
+电商领域：广告推荐、个性化推荐、大数据杀熟
+传媒领域：精准营销，交互推荐
+金融领域：信用评估、风险管控、客户细分、精细化营销
+交通领域：拥堵预测、智能红绿灯
+电信领域：基站选址优化、客户用户画像
+安防领域：犯罪预防、天网监控
+医疗领域：智慧医疗、疾病预防
+
+**大数据分析基本步骤**
+数据从哪里来，数据到哪里去
+* 明确分析目的和思路
+* 数据采集
+* 数据预处理
+* 数据分析
+* 数据展现（应用）
+
+**明确分析目的和思路：5W2H分析方法**
+why
+what
+who
+when
+where
+how
+how much
+
+**数据收集**
+数据从无到有、搬运的过程
+**数据处理**
+将数据进行结构化处理
+**数据分析**
+使用相关的工具进行数据处理分析、数据挖掘
+**数据展现**
+使用报表等工具对数据进行展示，提供决策支持
+
+**分布式技术**
+
+
 要解决的问题
 > 数据的存储 --多台机器分布式存储
 > 数据的计算 --多台机器分布式计算
 
+提供源码包的原因：
+匹配不同操作系统本地库环境，hadoop某些操作比如压缩、IO需要调用系统本地库（*.so|*.dll）
+允许根据不同的需求修改源码、重构源码
 ## hadoop的核心组件
 > hdfs 分布式文件存储系统
 > yarn 集群资源管理和任务调度框架
@@ -63,12 +104,28 @@
 > 可靠性 reliability
 > 通用性
 
+
 **hadoop包含的集群**
 逻辑是分离、物理上通常在一起部署
-hdfs集群
+* hdfs集群角色
+
+> Namenode： hdfs的核心，维护管理文件系统元数据，包括名称空间目录结构，文件和块的位置信息，访问权限信息，不持久化存储文件中块的datanode的位置信息，是hdfs的唯一入口
+ 内部通过内存和磁盘文件保证数据安全
+ 存在单点故障，需要配置大量内存
+> datanode： 负责具体的数据块存储，决定数据的存储能力，需要向namenode汇报块列表信息，需要配置大量的磁盘空间
+> Secondarynamenode： 充当namenode的辅助节点，不能代替namenode，帮助namenode进行元数据文件的合并动作,定期合并 fsimage 和 edits log 文件，并将 edits log 大小保持在一个限制内。
+
 > nameNode 管理节点
 > DataNode 数据节点
-yarn集群
+* yarn集群
+resourceManager 资源管理
+nodeManager 
+
+角色划分准则：
+根据软件的工作特性和服务硬件资源情况合理分配
+资源上有抢夺冲突的，尽量不要部署在一起
+工作上需要互相配合的尽量部署在一起
+
 
 ## 集群环境搭建
 3台机器 
@@ -83,7 +140,7 @@ hadoop-env.sh
 配置java home
 > HDFS_NAMENODE_OPTS   -> NameNode
 > HDFS_DATANODE_OPTS  -> Secondary NameNode
-
+四个xml配置文件
 core-site.xml 核心配置文件模块
 ```xml
 <configuration>
@@ -205,7 +262,7 @@ node2
 node3
 ```
 
-格式化 namemode format (初始化,不能执行多次，会导致数据丢失)
+**格式化 namemode format (初始化,不能执行多次，会导致数据丢失)**
 ```shell
 hadoop namenode -format
 ```
@@ -214,11 +271,14 @@ hdfs集群停动
 ```shell
 start-dfs.sh
 stop-dfs.sh
+# 使用命令
+hdfs --daemin start|stop namenode|datanode|secondnamenode
 ```
 yar集群启停
 ```shell
 start-yarn.sh
 stop-yarn.sh
+yarn --daemon start|stop resourcemanager|nodemanager
 ```
 启停所有
 ```shell
@@ -321,13 +381,7 @@ hdfs dfs -rmr /user/testdir #递归删除testdir文件夹
 hdfs dfs -text /spark/datas/README.md #以文本方式读取数据
 ```
 
-hdfs 角色职责
 
-* Namenode： hdfs的核心，维护管理文件系统元数据，包括名称空间目录结构，文件和块的位置信息，访问权限信息，不持久化存储文件中块的datanode的位置信息，是hdfs的唯一入口
-             内部通过内存和磁盘文件保证数据安全
-             存在单点故障，需要配置大量内存
-* datanode： 负责具体的数据块存储，决定数据的存储能力，需要向namenode汇报块列表信息，需要配置大量的磁盘空间
-* Secondarynamenode： 充当namenode的辅助节点，不能代替namenode，帮助namenode进行元数据文件的合并动作,定期合并 fsimage 和 edits log 文件，并将 edits log 大小保持在一个限制内。
 
 hdfs写数据流程
 **pipeline管道**
@@ -493,16 +547,7 @@ shuffle频繁设计到数据在内存、磁盘之间多次往复，导致mapredu
 > 也不消费任何数据
 > 主要用来分析数据
 
-特征
-> 面向主题性 -- subject-oriented 主题是一个抽象的概念，是较高层次数据综合，归类并进行分析利用的抽象
-* 抽象层次上对数据进行完整、一致和准确的描述
-> 集成性 -- integrated 主题相关的数据通常会分不在多个操作性系统中，彼此分散、独立、异构，需要继承到数据仓库主题下
-* 统一源数据中所有矛盾之处，进行数据综合计算
-> 非易失性 -- non-volatile  非易变性，数据仓库是分析数据的平台，而不是创造数据的平台
-* 大量的查询操作，修改操作很少
-> 时变性-- time-variant 数据仓库的数据需要随着时间更新，以适应决策的需要
-* 包含各种粒度的历史数据，数据仓库的数据需要随着时间更新，以适应决策的需要
-
+ 
 数据仓库开发语言 --sql（数据分析的主流语言）
 
 

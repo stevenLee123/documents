@@ -96,3 +96,7 @@ chmod 755 test.txt
 ```
 ## 向tcp端口号9999发送数据
 nc -lk 9999
+
+## 查询程序路径
+`which java`
+/Library/Java/JavaVirtualMachines/jdk1.8.0_291.jdk/Contents/Home/bin/java
