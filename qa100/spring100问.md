@@ -6,6 +6,1995 @@ spring是一个java开发的生态体系，包含spring framework，springboot�
 简化开发
 解耦
 
+## BeanFactory和ApplicationContext
+BeanFactory提供基本的bean获取功能，而ApplicationContext是BeanFactory的一个子接口，主要是提供BeanFactory的一些拓展功能，比如提BeanFactoryPostProcessor或BeanDefinitionRegistryPostProcessor实现对BeanDefinition的手动添加和修改操作，提供事件发布与监听的功能，提供BeanPostProcessor实现对bean初始化前后的修改等
+ApplicationContext也是对BeanFactory功能的组合
+
+ApplicationContext 提供的扩展功能：
+1. MessageResource：国际化支持
+2. ResourceLoader/ResourcePatternResolver:提供对资源文件的管理（各种配置的加载），提供通配符匹配资源的能力
+3. EnvironmentCapable:提供对系统环境变量及其他配置参数的管理
+4. ApplicationEventPublisher: 提供对事件发布与监听的支持
+
+**MessageResource：国际化支持**
+根据固定的key找到翻译后的结果
+context.getMessage()
+spring的国际化文件都放在messages.properties的文件中，
+messages-zh.properties 内容
+hi=hello
+message-en.properites内容
+hi=你好
+调用方式：
+```java
+        System.out.println(applicationContext.getMessage("hi", null, Locale.CHINA));
+        System.out.println(applicationContext.getMessage("hi", null, Locale.ENGLISH));
+```
+
+**ResourcePatternResolver资源读取**
+```java
+//读取配置文件
+  Resource[] resources = applicationContext.getResources("classpath:application.properties");
+        for (Resource resource : resources) {
+            System.out.println(resource);
+            
+        }
+        resources = applicationContext.getResources("classpath*:META-INF/spring.factories");
+        for (Resource resource : resources) {
+            System.out.println(resource);
+        }
+
+        
+```
+**EnvironmentCapable**
+```java
+ //取具体的变量配置信息
+        System.out.println(applicationContext.getEnvironment().getProperty("java_home"));
+        System.out.println(applicationContext.getEnvironment().getProperty("server.port"));       
+```
+
+**ApplicationEventPublisher**
+用来发布事件
+```java
+//定义事件
+public class UserRegisterEvent extends ApplicationEvent {
+    public UserRegisterEvent(Object source) {
+        super(source);
+    }
+}
+//定义事件监听器，任意spring的bean都可以监听
+@Component
+public class Component2 {
+
+    @EventListener
+    public void eventListener(UserRegisterEvent event){
+        System.out.println("收到用户注册事件");
+        System.out.println(event);
+    }
+}
+
+//发布事件
+@Component
+@Slf4j
+public class Component1 {
+    @Autowired
+    private ApplicationEventPublisher context;
+    //发布事件
+    public void register(){
+        log.info("用户注册");
+        context.publishEvent(new UserRegisterEvent(this));
+    }
+}
+applicationContext.getBean(Component1.class).register();
+```
+
+## 容器实现
+**BeanFactory实现**
+主要的实现 DefaultListableBeanFactory 
+bean的定义：
+> bean的class
+> 使用范围scope
+> 初始化
+> 销毁
+
+```java
+public class DefaultListableBeanFactoryTest {
+    public static void main(String[] args) {
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        //DefaultListableBeanFactory 不会解析@Bean和@Configuration
+        AbstractBeanDefinition beanDefinition =
+                BeanDefinitionBuilder.genericBeanDefinition(Config.class)
+                        .setScope("singleton")
+                        .getBeanDefinition();
+        beanFactory.registerBeanDefinition("config",beanDefinition);
+        //添加beanfactory的后置处理器,会一次性添加五个bean
+        AnnotationConfigUtils.registerAnnotationConfigProcessors(beanFactory);
+       //【1】
+        for (String name :
+                beanFactory.getBeanDefinitionNames()) {
+            System.out.println(name);
+        }
+          //获取beanfactory后置处理器并调用
+        Map<String, BeanFactoryPostProcessor> beansOfType = beanFactory.getBeansOfType(BeanFactoryPostProcessor.class);
+        beansOfType.values().forEach(beanFactoryPostProcessor -> {
+            beanFactoryPostProcessor.postProcessBeanFactory(beanFactory);
+        });
+        //【2】
+        for (String name :
+                beanFactory.getBeanDefinitionNames()) {
+            System.out.println(name);
+        }
+           //【3】获取A中的B
+       // System.out.println(beanFactory.getBean(A.class).getB());
+         //bean的后置处理器，针对bean的生命周期各个阶段提供扩展，如@Autowired，@Resource
+        //注册bean的后置处理器
+        beanFactory.getBeansOfType(BeanPostProcessor.class)
+                .values().forEach(beanFactory::addBeanPostProcessor);
+
+        //【4】获取A中的B
+        System.out.println(beanFactory.getBean(A.class).getB());
+    }
+
+    @Configuration
+    static class Config{
+
+        @Bean
+        public A a(){
+            return new A();
+        }
+        @Bean
+        public B b(){
+            return new B();
+        }
+    }
+}
+class A {
+    public A() {
+        System.out.println("构造 a");
+    }
+
+    @Autowired
+    private B b;
+
+    public B getB() {
+        return b;
+    }
+
+    public void setB(B b) {
+        this.b = b;
+    }
+}
+
+class B {
+    public B() {
+        System.out.println("构造 b");
+    }
+}
+
+```
+
+【1】处打印结果：
+config
+org.springframework.context.annotation.internalConfigurationAnnotationProcessor
+org.springframework.context.annotation.internalAutowiredAnnotationProcessor  --解析@Autowired注解
+org.springframework.context.annotation.internalCommonAnnotationProcessor   --解析@Resource注解
+org.springframework.context.event.internalEventListenerProcessor
+org.springframework.context.event.internalEventListenerFactory
+ 
+ @Autowired先按type后按name进行注入
+ @Resource 先按name再按type进行注入
+* DefaultListableBeanFactory不具备解析@Configuration 、@Bean等注解的能力，不具备自动解析配置文件中的占位符#{}、${}等功能提供通过手动的方式注入bean的定义
+
+【2】处打印结果：
+config
+org.springframework.context.annotation.internalConfigurationAnnotationProcessor
+org.springframework.context.annotation.internalAutowiredAnnotationProcessor
+org.springframework.context.annotation.internalCommonAnnotationProcessor
+org.springframework.context.event.internalEventListenerProcessor
+org.springframework.context.event.internalEventListenerFactory
+a
+b
+* 通过BeanfactoryPostProcessor实现容器的功能拓展
+【3】处打印结果：
+null
+* 目前的条件下@Autowired功能失效
+* 要注入B需要靠BeanPostProcessor（bean的生命周期内的后置处理器）
+【4】处打印结果
+构造 a
+23:28:17.243 [main] DEBUG org.springframework.beans.factory.support.DefaultListableBeanFactory - Creating shared instance of singleton bean 'b'
+构造 b
+com.dxy.data.springtest.beanFactory.B@783a467b
+
+* bean默认是延迟实例化（lazy）
+* 可以使用以下方法进行提前实例化：
+
+```java
+  //提前实例化单例
+        beanFactory.preInstantiateSingletons();
+```
+
+**ApplicationContext实现**
+相比BeanFactory可以实现从文件或其他方式加载beanDefinition
+相关类
+* `ClasspathXmlApplicationContext` --从类路径下加载bean的配置文件
+* `FileSystemXmlApplicationContext` --从文件系统路径下加载bean的配置文件
+* `XmlBeanDefinitionReader` --从xml文件中读取bean的定义信息放入到BeanDefinition，最后作为属性传给beanFactory
+* `AnnotationConfigApplicationContext` --从配置类@Configuration中加载beanDefinition
+* `AnnotataionConfigServletWebServerApplicationContext` --在AnnotationConfigApplicationContext扩展web servlet容器
+```java
+package com.dxy.data.springtest.applicationcontext;
+
+import org.springframework.boot.autoconfigure.web.servlet.DispatcherServletRegistrationBean;
+import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
+import org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext;
+import org.springframework.boot.web.servlet.server.ServletWebServerFactory;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.DispatcherServlet;
+import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.servlet.mvc.Controller;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+/**
+ * @Description:
+ * @CreateDate: Created in 2023/5/17 09:04
+ * @Author: lijie3
+ */
+public class ApplicationContextTest {
+
+    public static void main(String[] args) {
+        testServletWebServer();
+    }
+
+    private static void testServletWebServer(){
+        AnnotationConfigServletWebServerApplicationContext context =
+                new AnnotationConfigServletWebServerApplicationContext(WebConfig.class);
+
+    }
+    /**
+     * 设置web的三个组件
+     */
+    @Configuration
+    static class WebConfig{
+        //设置tomcat的工厂
+        @Bean
+        public ServletWebServerFactory servletWebServerFactory(){
+            return new TomcatServletWebServerFactory();
+        }
+
+        //设置前端转发器
+        @Bean
+        public DispatcherServlet dispatcherServlet(){
+            return new DispatcherServlet();
+        }
+        //注册DispatcherServlet
+        @Bean
+        public DispatcherServletRegistrationBean registrationBean(DispatcherServlet dispatcherServlet){
+            return  new DispatcherServletRegistrationBean(dispatcherServlet,"/");
+        }
+        //controller应用
+        @Bean("/hello")
+        public Controller controller(){
+            return (request, response) -> {
+                response.getWriter().println("hello");
+                return null;
+            };
+        }
+    }
+}
+```
+
+## bean的生命周期
+
+```java
+/**
+ * @Description:
+ * @CreateDate: Created in 2023/5/17 09:17
+ * @Author: lijie3
+ */
+@Component
+@Slf4j
+public class LifeCycleBean {
+    public LifeCycleBean() {
+        log.info("------construct.....");
+    }
+
+
+    @Autowired
+    public void setJavaHome(@Value("${JAVA_HOME}") String javaHome){
+        log.info("-----java_home:{}",javaHome);
+    }
+
+    @PostConstruct
+    public void init(){
+        log.info("-------init------");
+    }
+
+    @PreDestroy
+    public void destroy(){
+        log.info("-------destroy------");
+    }
+
+}
+```
+
+打印结果
+2023-05-17 09:23:46.893  INFO 30130 --- [           main] c.d.d.s.Component.LifeCycleBean          : ------construct.....
+2023-05-17 09:23:46.901  INFO 30130 --- [           main] c.d.d.s.Component.LifeCycleBean          : -----java_home:/Library/Java/JavaVirtualMachines/jdk1.8.0_291.jdk/Contents/Home
+2023-05-17 09:23:46.902  INFO 30130 --- [           main] c.d.d.s.Component.LifeCycleBean          : -------init------
+-------destroy------
+## bean的后置处理器 -- BeaPostProcessor
+DestructionAwareBeanPostProcessor 销毁相关的后置处理
+
+```java
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeansException;
+import org.springframework.beans.PropertyValues;
+import org.springframework.beans.factory.config.DestructionAwareBeanPostProcessor;
+import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
+import org.springframework.stereotype.Component;
+
+/**
+ * @Description:
+ * @CreateDate: Created in 2023/5/21 22:10
+ * @Author: lijie3
+ */
+@Slf4j
+@Component
+public class MyBeanPostProcessor  implements InstantiationAwareBeanPostProcessor, DestructionAwareBeanPostProcessor {
+    @Override
+    public void postProcessBeforeDestruction(Object bean, String beanName) throws BeansException {
+        if(beanName.equals("lifeCycleBean")){
+            log.info("==========销毁之前执行，如@PreDestroy");
+        }
+
+    }
+
+    @Override
+    public boolean requiresDestruction(Object bean) {
+        return DestructionAwareBeanPostProcessor.super.requiresDestruction(bean);
+    }
+
+    @Override
+    public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) throws BeansException {
+        if(beanName.equals("lifeCycleBean")){
+            log.info("==========实例化之后执行，这里返回的对象如果不为null会替换掉原来的bean");
+        }
+        return null;
+    }
+
+    @Override
+    public boolean postProcessAfterInstantiation(Object bean, String beanName) throws BeansException {
+
+        if(beanName.equals("lifeCycleBean")){
+            log.info("==========实例化之后执行，返回true 继续执行依赖注入，返回false会跳过依赖注入");
+        }
+        return true;
+    }
+
+
+    @Override
+    public PropertyValues postProcessProperties(PropertyValues pvs, Object bean, String beanName) throws BeansException {
+        if(beanName.equals("lifeCycleBean")){
+            log.info("==========依赖注入阶段执行，如@Autowired、@Value、@Resource");
+        }
+        return pvs;
+    }
+
+    @Override
+    public Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
+        if(beanName.equals("lifeCycleBean")){
+            log.info("==========初始化之前执行，这里返回的对象会替换掉原本的bean，如@PostConstruct、@ConfigurationProperties");
+        }
+        return bean;
+    }
+
+    @Override
+    public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+        if(beanName.equals("lifeCycleBean")){
+            log.info("==========初始化之前执行，这里返回的对象会替换掉原本的bean，如代理增强");
+        }
+        return bean;
+    }
+}
+```
+
+打印结果
+```
+[main] c.d.d.s.Component.MyBeanPostProcessor    : ==========实例化之后执行，这里返回的对象如果不为null会替换掉原来的bean
+2023-05-21 22:46:55.026  INFO 69429 --- [           main] c.d.d.s.Component.LifeCycleBean          : ------construct.....
+2023-05-21 22:46:55.033  INFO 69429 --- [           main] c.d.d.s.Component.MyBeanPostProcessor    : ==========实例化之后执行，返回true 继续执行依赖注入，返回false会跳过依赖注入
+2023-05-21 22:46:55.033  INFO 69429 --- [           main] c.d.d.s.Component.MyBeanPostProcessor    : ==========依赖注入阶段执行，如@Autowired、@Value、@Resource
+2023-05-21 22:46:55.037  INFO 69429 --- [           main] c.d.d.s.Component.LifeCycleBean          : -----java_home:/Library/Java/JavaVirtualMachines/jdk1.8.0_291.jdk/Contents/Home
+2023-05-21 22:46:55.038  INFO 69429 --- [           main] c.d.d.s.Component.MyBeanPostProcessor    : ==========初始化之前执行，这里返回的对象会替换掉原本的bean，如@PostConstruct、@ConfigurationProperties
+2023-05-21 22:46:55.038  INFO 69429 --- [           main] c.d.d.s.Component.LifeCycleBean          : -------init------
+2023-05-21 22:46:55.038  INFO 69429 --- [           main] c.d.d.s.Component.MyBeanPostProcessor    : ==========初始化之前执行，这里返回的对象会替换掉原本的bean，如代理增强
+ImportTest{name='this is a test'}
+构造 a
+构造 b
+2023-05-21 22:46:55.577  INFO 69429 --- [           main] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 1 endpoint(s) beneath base path '/actuator'
+2023-05-21 22:46:55.628  INFO 69429 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port(s): 8888 (http) with context path ''
+2023-05-21 22:46:55.646  INFO 69429 --- [           main] c.d.d.s.SpringtestApplication02          : Started SpringtestApplication02 in 3.07 seconds (JVM running for 3.794)
+2023-05-21 22:46:55.690  INFO 69429 --- [           main] c.d.d.s.Component.MyBeanPostProcessor    : ==========销毁之前执行，如@PreDestroy
+2023-05-21 22:46:55.690  INFO 69429 --- [           main] c.d.d.s.Component.LifeCycleBean          : -------destroy------
+Disconnected from the target VM, address: '127.0.0.1:64535', transport: 'socket'
+```
+### 模板方法模式 --在bean生命周期阶段使用的设计模式
+固定不变的步骤采用具体的方法实现，对与具体的步骤进行抽象，由子类来实现
+BeanPostProcessor 调用的原理
+```java
+public class MyBeanFactory {
+
+    private  List<BeanPostProcessor> processorList = new ArrayList<>();
+
+    public  Object getBean(){
+        Object bean = new Object();
+        System.out.println("构造bean：" + bean);
+        System.out.println("依赖注入 ：" + bean);
+        //不同的beanPostProcessor调用的时机不一样
+        for (BeanPostProcessor processor :
+                processorList) {
+            processor.postProcessAfterInitialization(bean,bean.toString());
+
+        }
+        System.out.println("初始化：" + bean);
+        return bean;
+    }
+}
+```
+
+### 解析@ConfigurationProperties的bean后置处理器ConfigurationPropertiesBindingPostProcessor
+```java
+//必须要有get和set方法才能绑定成功
+@Data
+@ConfigurationProperties(prefix = "java")
+public class JavaInfo {
+
+    private String home;
+
+    private String version;
+
+    @Override
+    public String toString() {
+        return "JavaInfo{" +
+                "home='" + home + '\'' +
+                ", version='" + version + '\'' +
+                '}';
+    }
+}
+
+    GenericApplicationContext context = new GenericApplicationContext();
+
+        context.registerBean("javaInfo", JavaInfo.class);
+        context.getDefaultListableBeanFactory().setAutowireCandidateResolver(new ContextAnnotationAutowireCandidateResolver());
+        context.registerBean(AutowiredAnnotationBeanPostProcessor.class);
+        context.registerBean(CommonAnnotationBeanPostProcessor.class);
+        ConfigurationPropertiesBindingPostProcessor.register(context.getDefaultListableBeanFactory());
+        context.refresh();
+        final JavaInfo bean = context.getBean(JavaInfo.class);
+        System.out.println(bean);
+
+        //容器销毁
+       context.close();
+```
+
+### @Autowired的bean后置处理器AutowiredAnnotationBeanPostProcessor
+
+```java
+public class Bean1 {
+//    @Autowired
+    private Bean2 bean2;
+    @Autowired
+    public void setBean2(Bean2 bean2) {
+        this.bean2 = bean2;
+    }
+
+    @Autowired
+    private Bean3 bean3;
+
+//    @Value("${JAVA_HOME}")
+    private String javaHome;
+
+    @Override
+    public String toString() {
+        return "Bean1{" +
+                "bean2=" + bean2 +
+                ", bean3=" + bean3 +
+                ", javaHome='" + javaHome + '\'' +
+                '}';
+    }
+
+    @Autowired
+    public void setJavaHome(@Value("${JAVA_HOME}")String javaHome) {
+        this.javaHome = javaHome;
+    }
+}
+//两种方式处理@Autowired注入方式
+    public static void main(String[] args) throws Throwable {
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        //通过这种方式注册bean不会走依赖注入、初始化过程
+        beanFactory.registerSingleton("bean2", new Bean2());
+        beanFactory.registerSingleton("bean3", new Bean3());
+        //处理@Value注解
+        beanFactory.setAutowireCandidateResolver(new ContextAnnotationAutowireCandidateResolver());
+
+        AutowiredAnnotationBeanPostProcessor processor = new AutowiredAnnotationBeanPostProcessor();
+        processor.setBeanFactory(beanFactory);
+        //解析value中的${}占位符
+        beanFactory.addEmbeddedValueResolver(new StandardEnvironment()::resolvePlaceholders);
+
+        Bean1 bean1 = new Bean1();
+
+        System.out.println(bean1);
+        //方式1：直接执行执行依赖注入,处理Autowired
+//        processor.postProcessProperties(null,bean1,"bean1");
+        //获取bean1上加了@Value、@Autowired注解的成员变量信息
+        final Method findAutowiringMetadata = AutowiredAnnotationBeanPostProcessor.class.getDeclaredMethod("findAutowiringMetadata", String.class, Class.class, PropertyValues.class);
+        findAutowiringMetadata.setAccessible(true);
+        final InjectionMetadata metadata = (InjectionMetadata)findAutowiringMetadata.invoke(processor, "bean1", Bean1.class, null);
+        System.out.println(metadata);
+        //方式2：通过反射的方式进行注入
+        metadata.inject(bean1,"bean1",null);
+
+        System.out.println(bean1);
+    // -------------原理展示-------------------
+       //按类型查找属性注入演示
+        Field bean3 = Bean1.class.getDeclaredField("bean3");
+        DependencyDescriptor dependencyDescriptor = new DependencyDescriptor(bean3, false);
+        //根据类型找到符合类型的属性bean
+        final Object o = beanFactory.doResolveDependency(dependencyDescriptor, null, null, null);
+        //找到容器中的bean3对象
+        System.out.println(o);
+
+        //按类型查找方法注入演示
+        final Method setBean2 = Bean1.class.getDeclaredMethod("setBean2", Bean2.class);
+        final DependencyDescriptor dependencyDescriptor1 = new DependencyDescriptor(new MethodParameter(setBean2, 0),false);
+        final Object o1 = beanFactory.doResolveDependency(dependencyDescriptor1, null, null, null);
+        //找到bean2对象
+        System.out.println(o1);
+           //值注入的方式
+        final Method setJavaHome = Bean1.class.getDeclaredMethod("setJavaHome", String.class);
+        final DependencyDescriptor dependencyDescriptor2 = new DependencyDescriptor(new MethodParameter(setJavaHome, 0), true);
+        final Object o2 = beanFactory.doResolveDependency(dependencyDescriptor2, null, null, null);
+        System.out.println(o2);
+    }
+```
+
+## BeanFactory的后置处理器
+* ConfigurationClassPostProcessor--处理@Configuration、@Import、@Bean、@ImportSource、@ComponentScan等和容器相关的注解
+* mybatis提供的MapperScannerConfigurer 对mybatis的mapper接口进行扫描（可以被@MapperScaner代理）
+```java
+@Configuration
+@ComponentScan("com.dxy.data.springtest.config")
+public class Config1 {
+    //实现对@Bean的解析
+    @Bean
+    public Bean1 bean1(){
+        return new Bean1();
+    }
+}
+    public static void main(String[] args) throws IOException {
+        GenericApplicationContext context = new GenericApplicationContext();
+        //在不进行其他容器后置处理器的情况下，@Configuration注解无法被解析到
+        context.registerBean("config1", Config1.class);
+        //使用BeanFactory的后置处理器
+         context.registerBean(ConfigurationClassPostProcessor.class);
+        context.refresh();
+
+        for (String name :
+                context.getBeanDefinitionNames()) {
+            System.out.println(name);
+        }
+        //容器销毁
+       context.close();
+    }
+```
+
+### ConfigurationClassPostProcessor实现原理 
+手写模拟实现：
+```java
+public class ComponentScanPostProcessor implements BeanFactoryPostProcessor {
+    @Override
+    public void postProcessBeanFactory(ConfigurableListableBeanFactory configurableListableBeanFactory) throws BeansException {
+
+        try {
+            //扫描包下的二进制class文件
+            final ComponentScan annotation = AnnotationUtils.findAnnotation(Config1.class, ComponentScan.class);
+            if (annotation != null) {
+                for (String s : annotation.basePackages()) {
+                    //取到配置的包名
+                    System.out.println(s);
+                    CachingMetadataReaderFactory factory = new CachingMetadataReaderFactory();
+                    //将包名转换为路径名
+                    String path = "classpath*:" + s.replace(".", "/") + "/**/*.class";
+                    System.out.println(path);
+                    final Resource[] resources = new PathMatchingResourcePatternResolver().getResources(path);
+                    final AnnotationBeanNameGenerator annotationBeanNameGenerator = new AnnotationBeanNameGenerator();
+                    for (Resource resource : resources) {
+                        //拿到类的元信息
+                        final MetadataReader metadataReader = factory.getMetadataReader(resource);
+                        System.out.println(metadataReader.getClassMetadata().getClassName());
+                        //是否加了@Component注解
+                        System.out.println("是否加了Component生注解：" + metadataReader.getAnnotationMetadata().hasAnnotation(Component.class.getName()));
+                        System.out.println("是否加了Component派生注解：" + metadataReader.getAnnotationMetadata().hasMetaAnnotation(Component.class.getName()));
+                        //注册beandefition
+                        if (metadataReader.getAnnotationMetadata().hasAnnotation(Component.class.getName()) ||
+                                metadataReader.getAnnotationMetadata().hasMetaAnnotation(Component.class.getName())) {
+                            final AbstractBeanDefinition beanDefinition = BeanDefinitionBuilder.genericBeanDefinition(metadataReader.getClassMetadata().getClassName()).getBeanDefinition();
+                            if(configurableListableBeanFactory instanceof DefaultListableBeanFactory){
+                                DefaultListableBeanFactory beanFactory = (DefaultListableBeanFactory) configurableListableBeanFactory;
+                                //生成bean的名字
+                                final String beanName = annotationBeanNameGenerator.generateBeanName(beanDefinition, beanFactory);
+                                //将beandefition注入到beanfactory
+                                beanFactory.registerBeanDefinition(beanName, beanDefinition);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+
+        }
+
+    }
+}
+//启动类中进行注册
+public static void main(String[] args) throws IOException {
+        GenericApplicationContext context = new GenericApplicationContext();
+        //在不进行其他容器后置处理器的情况下，@Configuration注解无法被解析到
+        context.registerBean("config1", Config1.class);
+        //注册beanFactory的后置处理器
+        context.registerBean(ComponentScanPostProcessor.class);
+        context.refresh();
+        System.out.println("---------------------------");
+
+        for (String name :
+                context.getBeanDefinitionNames()) {
+            System.out.println(name);
+        }
+        //容器销毁
+       context.close();
+    }
+```
+### 关于对@Bean注解的解析原理（可以将下面的代码封装到BeanFactoryPostProcessor中实现对@Bean注解的解析）
+
+```java
+ GenericApplicationContext context = new GenericApplicationContext();
+        //在不进行其他容器后置处理器的情况下，@Configuration注解无法被解析到
+        context.registerBean("config1", Config1.class);
+        CachingMetadataReaderFactory factory = new CachingMetadataReaderFactory();
+        MetadataReader reader = factory.getMetadataReader(new ClassPathResource("com/dxy/data/springtest/config/Config1.class"));
+        final Set<MethodMetadata> annotatedMethods = reader.getAnnotationMetadata().getAnnotatedMethods(Bean.class.getName());
+        //实现对@Bean注解方法的解析
+        for (MethodMetadata annotatedMethod : annotatedMethods) {
+            System.out.println(annotatedMethod);
+
+            final BeanDefinitionBuilder beanDefinitionBuilder = BeanDefinitionBuilder.genericBeanDefinition();
+            beanDefinitionBuilder.setFactoryMethodOnBean(annotatedMethod.getMethodName(),"config1");
+            final AbstractBeanDefinition beanDefinition = beanDefinitionBuilder.getBeanDefinition();
+            context.getDefaultListableBeanFactory().registerBeanDefinition(annotatedMethod.getMethodName(),beanDefinition);
+        }
+        //注册beanFactory的后置处理器
+        context.refresh();
+        System.out.println("---------------------------");
+
+        for (String name :
+                context.getBeanDefinitionNames()) {
+            System.out.println(name);
+        }
+        //容器销毁
+       context.close();
+```
+### mybatis-spring中的MapperFactoryBean
+* 扫描包下的class文件
+* 将class文件生成BeanDefinition
+* 将BeanDefinition注册到BeanFactory中
+通过MapperFactoryBean实现对mapper接口的代理
+
+
+## Aware接口
+Aware实现注入一些与容器相关的信息
+* BeanNameAware接口注入bean的名字
+* BeanFactoryAware接口注入BeanFactory容器
+* ApplicationContextAware接口注入ApplicationContext容器
+* EmbeddedValueResolverAware接口注入占位符${}对应的对应的值
+
+
+
+
+## InitializingBean接口
+实现bean的初始化功能
+
+**aware接口的方法先执行，InitializingBean接口的方法后执行**
+**Aware、InitializingBean属于spring的内置功能，而@PostConstruct、@Autowired等注解都属于spring的扩展功能，需要使用spring的bean的后置处理器，扩展功能可能在某些情况下（后置处理器缺失）可能会失效**
+
+## @Autowired失效分析
+失效情况演示：
+```java
+@Configuration
+@Slf4j
+public class Config2 {
+
+    @Autowired
+    public void setApplicationContext(ApplicationContext context){
+        log.info("注入applicationContext");
+    }
+
+    @PostConstruct
+    public void init(){
+        log.info("初始化");
+    }
+    //添加beanFactory的后置处理器,会导致@Autowired、@PostConstruct失效
+    @Bean
+    public BeanFactoryPostProcessor processor(){
+        return beanFactory -> {
+            log.info("执行BeanFactoryPostProcessor");
+        };
+    }
+}
+
+ public static void main(String[] args) throws IOException {
+        GenericApplicationContext context = new GenericApplicationContext();
+        //在不进行其他容器后置处理器的情况下，@Configuration注解无法被解析到
+        context.registerBean("config2", Config2.class);
+        //注册beanFactory的后置处理器
+        context.registerBean(AutowiredAnnotationBeanPostProcessor.class);
+        context.registerBean(CommonAnnotationBeanPostProcessor.class);
+        context.registerBean(ConfigurationClassPostProcessor.class);
+        context.refresh();
+        System.out.println("---------------------------");
+
+        for (String name :
+                context.getBeanDefinitionNames()) {
+            System.out.println(name);
+        }
+        //容器销毁
+        context.close();
+    }
+```
+原因分析：
+context.refresh() 的执行过程：
+- 首先从beanfctory中获取BeanFactory的后置处理器，
+- 然后添加bean的后置处理器，
+- 然后初始化单例bean，
+
+当java配置类中包含了BeanFactoryPostProcessor时，要先创建BeanFactoryPostProcessor的前提是先创建java泪痣类，而此时BeanPostProcessor还未准备好，导致配置类中的@Autowired，@PostConstruct等注解失效
+解决方案是通过spring的内置功能代替扩展功能，实现Aware、InitializingBean接口来注入属性
+
+## 初始化与销毁
+```java
+@Slf4j
+public class Bean5 implements InitializingBean {
+    @PostConstruct
+    public void init(){
+        log.info("初始化postConstruct");
+    }
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        log.info("初始化afterPropertiesSet");
+    }
+    public void init2(){
+        log.info("@bean的init注解的初始化");
+    }
+    @PreDestroy
+    public void destroy1(){
+        log.info("销毁@PreDestroy");
+    }
+
+    @Override
+    public void destroy() throws Exception {
+        log.info("销毁DisposableBean");
+    }
+    public void destroy2(){
+        log.info("销毁通过@Bean");
+    }
+}
+    public static void main(String[] args) throws IOException {
+        GenericApplicationContext context = new GenericApplicationContext();
+        //在不进行其他容器后置处理器的情况下，@Configuration注解无法被解析到
+        context.registerBean("config3", Config3.class);
+        //注册beanFactory的后置处理器
+        context.registerBean(AutowiredAnnotationBeanPostProcessor.class);
+        context.registerBean(CommonAnnotationBeanPostProcessor.class);
+        context.registerBean(ConfigurationClassPostProcessor.class);
+        System.out.println("---------------------------");
+        context.refresh();
+        System.out.println("---------------------------");
+        //容器销毁
+        context.close();
+    }
+    //执行结果：
+    //22:44:23.447 [main] INFO com.dxy.data.springtest.config.Bean5 - 初始化postConstruct -- 通过BeanPostProcessor执行
+//22:44:23.447 [main] INFO com.dxy.data.springtest.config.Bean5 - 初始化afterPropertiesSet --通过 实现InitializingBean实现
+//22:44:23.449 [main] INFO com.dxy.data.springtest.config.Bean5 - @bean的init注解的初始化 --通过BeanDefinition配置实现
+//22:48:05.667 [main] INFO com.dxy.data.springtest.config.Bean5 - 销毁@PreDestroy
+//22:48:05.668 [main] INFO com.dxy.data.springtest.config.Bean5 - 销毁DisposableBean
+//22:48:05.668 [main] INFO com.dxy.data.springtest.config.Bean5 - 销毁通过@Bean
+```
+
+## Scope
+scope中的类型：
+* singleton 单例，获取容器中的bean返回同一个对象,单例使用其他域的类必须使用@Lazy
+* prototype 原型，获取容器中的bean返回一个新的对象
+* request request域中有效
+* session session域中有效
+* application  ServletContext应用程序域有效
+
+### singleton使用需要注意的地方
+- 单例A中注入多例B时，由于只会注入一次，每次通过A获取B时，获取到的都是同一个B，而不是每次创建新的B
+解决思想：推迟其他scope bean的获取
+解决方案1：使用@Lazy标记A的B属性，生成代理实现每次都通过代理创建新的B的实例
+解决方法2: 在B的@Scope中添加属性，proxyMode= ScopedProxyMode.TARGET_CLASS,也是通过代理实现
+解决方案3: 使用ObjectFactory<B> 来包装属性B，通过ObjectFactory.getObject()来实现生成新的B实例
+解决方案4: 通过注入ApplicationContext,然后通过context.getBean()方法每次都拿到新的B实例
+
+## AOP的三种实现
+aop的实现不仅有代理，而且还使用了（aspectj）ajc来修改class实现增强（需要使用maven的编译插件，改方法使用的比较少），还可以使用jdk类加载的agent来实现（jdk16之前支持）
+
+## AOP的proxy
+两种代理方式：
+jdk代理：只针对接口代理
+```java
+public class JdkProxyDemo {
+
+    interface Foo{
+        void foo();
+    }
+    //目标对象允许是final类型
+    static class Target implements Foo{
+        @Override
+        public void foo() {
+            System.out.println("target foo");
+        }
+    }
+
+    public static void main(String[] args) {
+        Target target = new Target();
+        //用来加载在运行期间动态生成的字节码
+        ClassLoader loader = JdkProxyDemo.class.getClassLoader();
+        Foo proxy = (Foo) Proxy.newProxyInstance(loader, new Class[]{Foo.class}, new InvocationHandler() {
+            @Override
+            public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                System.out.println("before ....");
+                //通过反射执行目标方法
+                method.invoke(target,args);
+                System.out.println("after.....");
+                return null;
+            }
+        });
+        proxy.foo();
+    }
+}
+```
+cglib代理，可以对类进行代理，**被代理类和被代理的方法不能是final类型**
+```java
+public class CglibProxyDemo {
+
+    static class Target{
+        public void foo(){
+            System.out.println("target foo");
+        }
+    }
+
+    public static void main(String[] args) {
+        Target target = new Target();
+        //cglib代理
+        final Target proxy = (Target) Enhancer.create(Target.class, new MethodInterceptor() {
+            @Override
+            public Object intercept(Object proxy, Method method, Object[] args, MethodProxy methodProxy) throws Throwable {
+                System.out.println("before ....");
+                                //使用反射调用目标
+//                final Object result = method.invoke(target, args);
+                //methodProxy可以避免反射的调用,内部不是用的反射，spring用的是这种方式
+                final Object result = methodProxy.invoke(target, args);
+                                //调用proxy的父类方法也可以实现方法调用
+                //final Object result = methodProxy.invokeSuper(proxy, args);
+                System.out.println("after.....");
+                return result;
+            }
+        });
+        proxy.foo();
+    }
+}
+```
+
+### jdk动态代理原理
+* jdk动态代理使用了asm来动态生成代理类
+* 一个目标方法对应一个代理类
+* 手写实现动态代理：
+```java
+package com.dxy.data.springtest.aop;
+
+import java.lang.reflect.Method;
+import java.lang.reflect.UndeclaredThrowableException;
+
+/**
+ * @Description: jdk代理模拟实现
+ * @CreateDate: Created in 2023/5/23 09:09
+ * @Author: lijie3
+ */
+public class $Proxy0 implements JdkProxyDemo02.Foo {
+
+    private JdkProxyDemo02.InvocationHandler h;
+
+    public $Proxy0(JdkProxyDemo02.InvocationHandler h) {
+        this.h = h;
+    }
+
+    @Override
+    public void foo() {
+        //对于不确定代码的实现应该提供抽象方法
+        try {
+            h.invoke(this,foo,new Object[0]);
+        }catch (Throwable e){
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public int bar() {
+         int result = 0;
+        try{
+            result = (int) h.invoke(this,bar, new Object[0]);
+            return result;
+        }catch (RuntimeException |Error e){
+            throw e;
+            //检查异常转化为非检查异常后抛出
+        }catch (Throwable e){
+            throw new UndeclaredThrowableException(e);
+        }
+    }
+
+    static Method foo;
+
+    static Method bar;
+
+   static {
+       try {
+           foo = JdkProxyDemo02.Foo.class.getDeclaredMethod("foo");
+           bar = JdkProxyDemo02.Foo.class.getDeclaredMethod("bar");
+       } catch (NoSuchMethodException e) {
+           throw new NoSuchMethodError(e.getMessage());
+       }
+   }
+}
+
+package com.dxy.data.springtest.aop;
+
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+
+/**
+ * @Description: 实际使用
+ * @CreateDate: Created in 2023/5/23 08:26
+ * @Author: lijie3
+ */
+public class JdkProxyDemo02 {
+
+    interface Foo {
+        void foo();
+
+        int bar();
+    }
+
+    //目标对象允许是final类型
+    static class Target implements Foo {
+        @Override
+        public void foo() {
+            System.out.println("target foo");
+        }
+
+        @Override
+        public int bar() {
+            System.out.println("target bar");
+            return 1;
+        }
+    }
+
+    interface InvocationHandler {
+        Object invoke(Object proxy,Method method, Object[] args) throws Throwable;
+    }
+
+    public static void main(String[] args) {
+        Foo proxy0 = new $Proxy0(new InvocationHandler() {
+            @Override
+            public Object invoke(Object proxy,Method method, Object[] args) throws InvocationTargetException, IllegalAccessException {
+                //实现功能增强
+                System.out.println("before....");
+                //调用目标
+                Object result = method.invoke(new Target(), args);
+                System.out.println("after......");
+                return result;
+            }
+        });
+        proxy0.foo();
+        proxy0.bar();
+    }
+}
+```
+* jdk动态代理生成字节码
+  * 使用了ASM来生成字节码
+  * 动态代理时通过反射来执行被代理的方法，而jdk会通过编译优化实现了对反射的优化，多次调用时将会将反射调用优化成正常的方法调用
+
+* AOP表达式
+| 切入点指示符 | 含义                                                       |
+| ------------ | ---------------------------------------------------------- |
+| execution    | 匹配执行方法的连接点                                       |
+| within       | 匹配指定类型内的执行方法                                   |
+| this         | 匹配当前AOP代理对象类型的执行方法(可能包括引入接口)        |
+| target       | 匹配当前目标对象类型的执行方法(不包括引入接口)             |
+| args         | 匹配当前执行的方法传入的参数为指定类型的执行方法           |
+| @target      | 匹配当前目标对象类型的执行方法，其中目标对象持有指定的注解 |
+| @within      | 匹配所有持有指定注解类型内的方法                           |
+| @args        | 匹配当前执行的方法传入的参数持有指定注解的执行             |
+| @annotation  | 匹配当前执行方法持有指定注解的方法                         |
+
+### cglib代理类的内部实现
+cglib 底层可以通过两个代理类避免反射的调用，直接调用被代理对象的方法，提高效率
+一个cglib的代理类对应两个fastclass，可以匹配到多个方法
+代码模拟实现：
+```java
+//被代理对象
+public class Target {
+
+    public void save(){
+        System.out.println("target save");
+    }
+
+    public void save(int i){
+        System.out.println("target save:"+ i);
+    }
+}
+//代理类
+public class Proxy extends Target{
+
+    private MethodInterceptor methodInterceptor;
+
+    static Method save0;
+
+    static Method save1;
+
+    static MethodProxy save0Proxy;
+
+    static MethodProxy save1Proxy;
+
+    static{
+        try {
+            save0 = Target.class.getDeclaredMethod("save");
+            save1 = Target.class.getDeclaredMethod("save", int.class);
+            //()V 无参方法
+            save0Proxy = MethodProxy.create(Target.class,Proxy.class,"()V","save","saveSuper");
+            //(I)V 带一个整型参数的方法
+            save1Proxy = MethodProxy.create(Target.class,Proxy.class,"(I)V","save","saveSuper");
+        } catch (NoSuchMethodException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void setMethodInterceptor(MethodInterceptor methodInterceptor) {
+        this.methodInterceptor = methodInterceptor;
+    }
+
+    /**
+     * 带原始功能的save
+     */
+    public void saveSuper(){
+        super.save();
+    }
+
+    public void saveSuper(int i){
+        super.save(i);
+    }
+
+    @Override
+    public void save() {
+        try {
+            methodInterceptor.intercept(this,save0,new Object[0],save0Proxy);
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void save(int i) {
+        try {
+            methodInterceptor.intercept(this,save1,new Object[]{i},save1Proxy);
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+    }
+}
+//使用
+public class CglibDemo {
+
+    public static void main(String[] args) {
+        Proxy proxy = new Proxy();
+        Target target = new Target();
+        proxy.setMethodInterceptor(new MethodInterceptor() {
+            @Override
+            public Object intercept(Object p, Method method, Object[] objects, MethodProxy methodProxy) throws Throwable {
+                System.out.println("before");
+//                return   method.invoke(target, objects);//反射调用
+                return   methodProxy.invoke(target, objects);//内部无反射，结合目标调用
+//                return   methodProxy.invokeSuper(p, objects);//内部无反射，结合代理用
+            }
+        });
+        proxy.save();
+        proxy.save(10);
+    }
+}
+```
+### MethodProxy是如何避免反射调用的
+
+
+## spring对jdk和cglib代理的统一
+概念： 
+  * aspect --切面类
+  * pointcut --切点
+  * advice -- 通知方法
+  * advisor切面 -- 包含一个通知和一个切点
+
+### 使用spring的原生AOP接口实现aop
+```java
+public class SpringAopDemo {
+
+    public static void main(String[] args) {
+        //1.切点准备
+        AspectJExpressionPointcut pointcut = new AspectJExpressionPointcut();
+        pointcut.setExpression("execution(* foo())");
+        //2.准备通知
+        MethodInterceptor advice = new MethodInterceptor() {
+            @Override
+            public Object invoke(MethodInvocation invocation) throws Throwable {
+                System.out.println("before....");
+                Object result = invocation.proceed();
+                System.out.println("after.....");
+                return result;
+            }
+        };
+        //3. 准备切面
+        DefaultPointcutAdvisor advisor = new DefaultPointcutAdvisor(pointcut,advice);
+
+        //4. 创建代理
+        Target target = new Target();
+        ProxyFactory factory = new ProxyFactory();
+        factory.setTarget(target);
+        factory.addAdvisor(advisor);
+//        factory.setInterfaces(target.getClass().getInterfaces());
+//        factory.setProxyTargetClass(true);
+        I1 proxy = (I1) factory.getProxy();
+        //spring默认情况下不知道target是否实现了接口，会使用cglib增强，
+        // 当使用了factory.setInterfaces()方法设置了接口，则会使用jdk实现
+        System.out.println(proxy.getClass());
+        proxy.foo();
+        proxy.bar();
+    }
+    interface I1{
+        void foo();
+
+        void bar();
+    }
+
+    static class Target implements I1{
+        @Override
+        public void foo() {
+            System.out.println("target foo");
+        }
+
+        @Override
+        public void bar() {
+            System.out.println("target bar");
+        }
+    }
+}
+```
+### spring对增强代理的选择
+三种情况：
+* 在ProxyConfig中当proxyTargetClass=false，且目标实现了接口，用jdk实现代理
+* proxyTargetClass=false，且目标没有实现接口，用cglib实现代理
+* proxyTargetClass=true,使用cglib实现
+
+### 切点匹配规则
+```java
+public class SpringAopDemo2 {
+
+    public static void main(String[] args) throws NoSuchMethodException {
+        AspectJExpressionPointcut pointcut1 = new AspectJExpressionPointcut();
+        pointcut1.setExpression("execution(* bar())");
+        //判断方法是否匹配
+        System.out.println(pointcut1.matches(T1.class.getMethod("foo"), T1.class)); //false
+        System.out.println(pointcut1.matches(T1.class.getMethod("bar"), T1.class));//true
+        AspectJExpressionPointcut pointcut2 = new AspectJExpressionPointcut();
+        //根据注解判断
+        pointcut2.setExpression("@annotation(org.springframework.transaction.annotation.Transactional)");
+        System.out.println(pointcut2.matches(T1.class.getMethod("foo"), T1.class));//true
+        System.out.println(pointcut2.matches(T1.class.getMethod("bar"), T1.class));//false
+        //spring中Transactional注解的匹配
+        StaticMethodMatcherPointcut pointcut3 = new StaticMethodMatcherPointcut() {
+            @Override
+            public boolean matches(Method method, Class<?> targetClass) {
+                 MergedAnnotations annotations = MergedAnnotations.from(method);
+//                检查方法上是否存在Transactional注解
+                if(annotations.isPresent(Transactional.class)){
+                    return true;
+                }
+//                检查类上是否有Transactional注解,查找继承关系上的Transactional
+                annotations =MergedAnnotations.from(targetClass, MergedAnnotations.SearchStrategy.TYPE_HIERARCHY);
+                if(annotations.isPresent(Transactional.class)){
+                    return true;
+                }
+                return false;
+            }
+        };
+        System.out.println(pointcut3.matches(T1.class.getMethod("foo"), T1.class));//true
+        System.out.println(pointcut3.matches(T1.class.getMethod("bar"), T1.class));//false
+        System.out.println(pointcut3.matches(T2.class.getMethod("foo"), T2.class));//true
+        System.out.println(pointcut3.matches(T3.class.getMethod("foo"), T3.class));//true
+
+    }
+    static class T1{
+        @Transactional
+        public void foo(){
+        }
+        public void bar(){
+        }
+    }
+    @Transactional
+    static class T2{
+
+        public void foo(){
+        }
+        public void bar(){
+        }
+    }
+    @Transactional
+    interface I3{
+        void foo();
+    }
+
+    static class T3 implements I3{
+        @Override
+        public void foo() {
+
+        }
+    }
+```
+### spring中的两种切面 @Aspect、Advisor
+手动注册切面处理
+```java
+package com.dxy.data.springtest.aop.springaop;
+
+import org.aopalliance.intercept.MethodInterceptor;
+import org.aopalliance.intercept.MethodInvocation;
+import org.aspectj.lang.annotation.After;
+import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.annotation.Before;
+import org.springframework.aop.Advisor;
+import org.springframework.aop.aspectj.AspectJExpressionPointcut;
+import org.springframework.aop.aspectj.annotation.AnnotationAwareAspectJAutoProxyCreator;
+import org.springframework.aop.support.DefaultPointcutAdvisor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.ConfigurationClassPostProcessor;
+import org.springframework.context.support.GenericApplicationContext;
+
+import java.util.List;
+
+/**
+ * @Description:
+ * @CreateDate: Created in 2023/5/24 08:55
+ * @Author: lijie3
+ */
+public class SpringAopDemo3 {
+
+    public static void main(String[] args) throws NoSuchMethodException {
+
+        GenericApplicationContext context = new GenericApplicationContext();
+        context.registerBean("aspect1", Aspect1.class);
+        context.registerBean("config", Config.class);
+        context.registerBean(ConfigurationClassPostProcessor.class);
+        //切面处理类
+        context.registerBean(AnnotationAwareAspectJAutoProxyCreator1.class);
+        context.refresh();
+//        for (String beanDefinitionName : context.getBeanDefinitionNames()) {
+//            System.out.println(beanDefinitionName);
+//        }
+
+        AnnotationAwareAspectJAutoProxyCreator1 creator = context.getBean(AnnotationAwareAspectJAutoProxyCreator1.class);
+        //打印找到的切面
+        final List<Advisor> advisors = creator.findEligibleAdvisors(T1.class, "t1");
+        for (Advisor advisor : advisors) {
+            System.out.println(advisor);
+        }
+
+        System.out.println("============");
+        //判断是否需要创建代理
+        final T1 p1 = (T1) creator.wrapIfNecessary(new T1(), "t1", "target1");
+        System.out.println(p1.getClass());
+        final T2 p2 = (T2) creator.wrapIfNecessary(new T2(), "t2", "target2");
+        System.out.println(p2.getClass());
+        p1.foo();
+        p2.bar();
+
+    }
+
+    static class T1 {
+        public void foo() {
+            System.out.println("t1 foo");
+        }
+
+        public void bar() {
+            System.out.println("t1 bar");
+        }
+    }
+
+    static class T2 {
+        public void bar() {
+            System.out.println("t2 bar");
+        }
+    }
+
+    interface I3 {
+        void foo();
+    }
+
+    static class T3 implements I3 {
+        @Override
+        public void foo() {
+
+        }
+    }
+
+    //使用高级切面
+    @Aspect
+    static class Aspect1 {
+
+        @Before("execution(* foo())")
+        public void before() {
+            System.out.println("aspect before....");
+        }
+
+        @After("execution(* foo())")
+        public void after() {
+            System.out.println("aspect after....");
+        }
+
+    }
+
+    @Configuration
+    static class Config {
+        @Bean
+        public Advisor advisor(MethodInterceptor advice3) {
+            AspectJExpressionPointcut pointcut = new AspectJExpressionPointcut();
+            pointcut.setExpression("execution(* foo())");
+            return new DefaultPointcutAdvisor(pointcut, advice3);
+        }
+
+        @Bean
+        public MethodInterceptor advice3() {
+            return new MethodInterceptor() {
+                @Override
+                public Object invoke(MethodInvocation invocation) throws Throwable {
+                    System.out.println("advice3 before.....");
+                    final Object proceed = invocation.proceed();
+                    System.out.println("advice3 after.....");
+                    return proceed;
+                }
+            };
+        }
+    }
+
+    static class AnnotationAwareAspectJAutoProxyCreator1 extends AnnotationAwareAspectJAutoProxyCreator {
+        @Override
+        protected List<Advisor> findEligibleAdvisors(Class<?> beanClass, String beanName) {
+            return super.findEligibleAdvisors(beanClass,beanName);
+        }
+
+        @Override
+        protected Object wrapIfNecessary(Object bean, String beanName, Object cacheKey) {
+            return super.wrapIfNecessary(bean, beanName, cacheKey);
+        }
+    }
+
+}
+```
+### 创建代理的时机
+* 当Bean1 与其他Bean不存在循环依赖时，在初始化之后创建代理
+* 当Bean1与Bean2存在循环依赖时，在构造器执行之后，在依赖注入之前创建代理
+
+**在依赖注入和初始化时不应该被增强，仍然要使用原始对象**
+
+###  切面优先级
+* 高级切面@Aspect注解切面可以使用@Order(200)来指定优先级
+* 低级切面Advisor 可以使用setOrder(300)方法来指定优先级
+* @Order注解中的值越大，优先级越低
+* @Order加在方法上不起任何作用
+
+### 高级切面转化低级切面,并执行链式调用 --使用适配器模式，责任链模式
+```java
+    public static void main(String[] args) throws Throwable {
+        AspectInstanceFactory factory = new SingletonAspectInstanceFactory(new Aspect1());
+        //高级切面转化为低级切面
+        List<Advisor> advisorList = new ArrayList<>();
+        for (Method method : Aspect1.class.getDeclaredMethods()) {
+            if (method.isAnnotationPresent(Before.class)) {
+                final String value = method.getAnnotation(Before.class).value();
+                //设置切点
+                AspectJExpressionPointcut pointcut = new AspectJExpressionPointcut();
+                pointcut.setExpression(value);
+                //通知
+                AspectJMethodBeforeAdvice advice = new AspectJMethodBeforeAdvice(method, pointcut, factory);
+                //切面
+                Advisor advisor = new DefaultPointcutAdvisor(pointcut, advice);
+                advisorList.add(advisor);
+            }
+        }
+        System.out.println("==========");
+        for (Advisor advisor : advisorList) {
+            System.out.println(advisor);
+
+        }
+        //4. 创建代理
+        T1 target = new T1();
+        ProxyFactory proxyFactory = new ProxyFactory();
+        proxyFactory.setTarget(target);
+        proxyFactory.addAdvice(ExposeInvocationInterceptor.INSTANCE); //准备将methodInvocation放入当前线程
+        proxyFactory.addAdvisors(advisorList);
+        System.out.println("==========");
+        //通知类型转换,所有的通知类型都转化为环绕通知
+        final List<Object> methodInterceptorList = proxyFactory.getInterceptorsAndDynamicInterceptionAdvice(T1.class.getMethod("foo"), T1.class);
+        for (Object interceptor : methodInterceptorList) {
+            System.out.println(interceptor);
+        }
+        //创建并执行调用
+        MethodInvocation methodInvocation = new ReflectiveMethodInvocation1(null,target,T1.class.getMethod("foo"),new Object[0],T1.class,methodInterceptorList);
+        methodInvocation.proceed();
+    }
+```
+### aop中的责任链模式执行逻辑
+```java
+public class SpringAopDemo5 {
+
+    public static void main(String[] args) throws Throwable {
+        //调用链执行基本逻辑
+
+        T1 target = new T1();
+        List<MethodInterceptor> adviceList = new ArrayList<>();
+        adviceList.add(new Advice1());
+        adviceList.add(new Advice2());
+
+        MyInvocation invocation = new MyInvocation(target,T1.class.getMethod("foo"),new Object[0],adviceList);
+        invocation.proceed();
+    }
+
+    static class Advice1 implements MethodInterceptor{
+
+        @Override
+        public Object invoke(MethodInvocation invocation) throws Throwable {
+            System.out.println("advice1.before()");
+            Object result = invocation.proceed();
+            System.out.println("advice1.after()");
+            return result;
+        }
+    }
+    static class Advice2 implements MethodInterceptor{
+
+        @Override
+        public Object invoke(MethodInvocation invocation) throws Throwable {
+            System.out.println("advice2.before()");
+            Object result = invocation.proceed();
+            System.out.println("advice2.after()");
+            return result;
+        }
+    }
+
+    static class MyInvocation implements MethodInvocation{
+    //目标对象
+        private Object target;
+        //目标方法
+        private Method method;
+        //方法参数
+        private Object[] args;
+
+        private int count = 1;
+
+        List<MethodInterceptor> methodInterceptorList;
+
+        public MyInvocation(Object target, Method method, Object[] args, List<MethodInterceptor> methodInterceptorList) {
+            this.target = target;
+            this.method = method;
+            this.args = args;
+            this.methodInterceptorList = methodInterceptorList;
+        }
+
+        @Override
+        public Method getMethod() {
+            return method;
+        }
+
+        @Override
+        public Object[] getArguments() {
+            return args;
+        }
+
+        //调用每一个环绕通知，并调用目标方法，这里使用了递归调用
+        @Override
+        public Object proceed() throws Throwable {
+            if(count > methodInterceptorList.size()){
+                //调用次数大于通知数量，则需要调用目标，返回并结束
+                return method.invoke(target, args);
+            }
+            MethodInterceptor methodInterceptor = methodInterceptorList.get(count++ -1);
+            return methodInterceptor.invoke(this);
+        }
+
+        @Override
+        public Object getThis() {
+            return target;
+        }
+
+        @Override
+        public AccessibleObject getStaticPart() {
+            return method;
+        }
+    }
+
+    static class T1 {
+        public void foo() {
+            System.out.println("t1 foo");
+        }
+
+        public void bar() {
+            System.out.println("t1 bar");
+        }
+    }
+}
+```
+### 动态通知调用
+静态：不带参数绑定,执行时不需要切点
+```java
+        @Before("execution(* foo())")
+        public void before() {
+            System.out.println("aspect before....");
+        }
+```   
+动态：带参数绑定,需要切点对象
+```java
+        @After("execution(* foo()) && args(x)")
+        public void after(int x) {
+            System.out.println("aspect after....");
+        }
+```   
+## springmvc
+### dispatchServlet 初始化时机
+基本环境配置：
+```java
+@Configuration
+@ComponentScan
+public class WebConfig {
+
+
+    //内嵌web容器工厂
+    @Bean
+    public TomcatServletWebServerFactory tomcatServletWebServerFactory(){
+        return new TomcatServletWebServerFactory();
+    }
+
+    //创建前端控制器
+    @Bean
+    public DispatcherServlet dispatcherServlet(){
+        return new DispatcherServlet();
+    }
+
+    //注册DispatcherServlet
+    public DispatcherServletRegistrationBean dispatcherServletRegistrationBean(DispatcherServlet dispatcherServlet){
+        return new DispatcherServletRegistrationBean(dispatcherServlet,"/");
+    }
+
+}
+
+    public static void main(String[] args) {
+        AnnotationConfigServletWebServerApplicationContext context =
+                new AnnotationConfigServletWebServerApplicationContext(WebConfig.class);
+
+    }
+```
+* DispatcherServlet的初始化走的是servlet的体系，默认在首次收到请求会初始化dispatcherServlet
+
+配置文件绑定到bean对象，对servlet配置进行修改
+```java
+@Configuration
+@ComponentScan
+@PropertySource("classpath:application.properties")
+//绑定application.properties配置到配置类中
+@EnableConfigurationProperties({WebMvcProperties.class, ServerProperties.class})
+public class WebConfig {
+
+
+    //内嵌web容器工厂
+    @Bean
+    public TomcatServletWebServerFactory tomcatServletWebServerFactory(){
+        return new TomcatServletWebServerFactory();
+    }
+
+    //创建前端控制器
+    @Bean
+    public DispatcherServlet dispatcherServlet(){
+        return new DispatcherServlet();
+    }
+
+    //注册DispatcherServlet
+    public DispatcherServletRegistrationBean dispatcherServletRegistrationBean(DispatcherServlet dispatcherServlet,WebMvcProperties webMvcProperties){
+
+        final DispatcherServletRegistrationBean dispatcherServletRegistrationBean = new DispatcherServletRegistrationBean(dispatcherServlet, "/");
+        //设置启动顺序,设置后可以控制dispatcherServlet在容器启动时就创建
+        dispatcherServletRegistrationBean.setLoadOnStartup(webMvcProperties.getServlet().getLoadOnStartup());
+        return dispatcherServletRegistrationBean;
+    }
+}
+```
+```
+spring.mvc.servlet.load-on-startup=1
+```
+### RequestMappingHandlerMapping
+将用户请求（request）映射成controller中的方法（handler）
+```java
+    public static void main(String[] args) throws Exception {
+        AnnotationConfigServletWebServerApplicationContext context =
+                new AnnotationConfigServletWebServerApplicationContext(WebConfig.class);
+//        解析@RequestMapping及派生注解，生成路径与控制器方法的映射关系，在初始化时就生成
+        RequestMappingHandlerMapping handlerMapping = context.getBean(RequestMappingHandlerMapping.class);
+        //获取映射结果
+        final Map<RequestMappingInfo, HandlerMethod> handlerMethods = handlerMapping.getHandlerMethods();
+        handlerMethods.forEach((k,v) -> {
+            log.info("{}-{}",k,v);
+        });
+        //模拟请求，获取到执行链对象
+        HandlerExecutionChain chain = handlerMapping.getHandler(new MockHttpServletRequest("get", "/hello"));
+        System.out.println(chain);
+    }
+      @Bean
+    public RequestMappingHandlerMapping requestMappingHandlerMapping(){
+        return new RequestMappingHandlerMapping();
+    }
+
+```
+### RequestmappingHandlerAdapter --处理器适配器
+用来调用控制器使用RequestMapping注解标注的方法
+```java
+    public static void main(String[] args) throws Exception {
+        AnnotationConfigServletWebServerApplicationContext context =
+                new AnnotationConfigServletWebServerApplicationContext(WebConfig.class);
+//        解析@RequestMapping及派生注解，生成路径与控制器方法的映射关系，在初始化时就生成
+        RequestMappingHandlerMapping handlerMapping = context.getBean(RequestMappingHandlerMapping.class);
+        //获取映射结果
+        final Map<RequestMappingInfo, HandlerMethod> handlerMethods = handlerMapping.getHandlerMethods();
+        handlerMethods.forEach((k,v) -> {
+            log.info("{}-{}",k,v);
+        });
+        //模拟请求，获取到执行链对象
+        final MockHttpServletRequest request = new MockHttpServletRequest("GET", "/hello");
+        request.setParameter("name","dxyer");
+        HandlerExecutionChain chain = handlerMapping.getHandler(request);
+        System.out.println(chain);
+        final MockHttpServletResponse response = new MockHttpServletResponse();
+        //处理器的执行
+        MyRequestMappingHandlerAdapter adapter  = context.getBean(MyRequestMappingHandlerAdapter.class);
+        final ModelAndView modelAndView = adapter.invokeHandlerMethod(request, response, (HandlerMethod) chain.getHandler());
+        log.info("result:{}",modelAndView);
+        //adapte中的参数解析器
+        System.out.println("==================");
+        for (HandlerMethodArgumentResolver argumentResolver : adapter.getArgumentResolvers()) {
+            System.out.println(argumentResolver);
+        }
+        System.out.println("==================");
+        for (HandlerMethodReturnValueHandler returnValueHandler : adapter.getReturnValueHandlers()) {
+            System.out.println(returnValueHandler);
+        }
+    }
+
+    @Bean
+    public MyRequestMappingHandlerAdapter myRequestMappingHandlerAdapter(){
+        return new MyRequestMappingHandlerAdapter();
+    }
+  ```
+### 自定义参数解析器
+  参照上面的adapter添加参数解析器的方式，可以自定义参数解析器对参数来进行解析
+```java
+@Target({ElementType.PARAMETER})
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface Token {
+}
+public class TokenArgumentResolver implements HandlerMethodArgumentResolver {
+    //匹配支持某个参数
+    @Override
+    public boolean supportsParameter(MethodParameter parameter) {
+        final Token token = parameter.getParameterAnnotation(Token.class);
+
+        return token != null;
+    }
+
+    //解析参数
+    @Override
+    public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
+                                  NativeWebRequest webRequest, WebDataBinderFactory binderFactory) throws Exception {
+       return webRequest.getHeader("token");
+    }
+}
+    @Bean
+    public MyRequestMappingHandlerAdapter myRequestMappingHandlerAdapter(){
+        final TokenArgumentResolver tokenArgumentResolver = new TokenArgumentResolver();
+
+        final MyRequestMappingHandlerAdapter myRequestMappingHandlerAdapter = new MyRequestMappingHandlerAdapter();
+
+        myRequestMappingHandlerAdapter.setCustomArgumentResolvers(List.of(tokenArgumentResolver));
+        return myRequestMappingHandlerAdapter;
+    }
+
+     request.addHeader("token", UUID.randomUUID().toString());
+
+
+    @GetMapping("/hello")
+    public String test1(@RequestParam("name") String name, @Token String token){
+        return "hello " + name + ":" + token;
+    }
+  ```
+
+  ### 自定义返回值处理器 （@ReponseBody是通过自定义返回值处理器来返回json对象的）
+
+  ```java
+  @Target({ElementType.METHOD})
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface Yml {
+}
+
+public class YmlReturnValueHandler implements HandlerMethodReturnValueHandler {
+    @Override
+    public boolean supportsReturnType(MethodParameter returnType) {
+        final Yml methodAnnotation = returnType.getMethodAnnotation(Yml.class);
+        return methodAnnotation != null;
+    }
+
+    /**
+     * returnValue返回的真实值
+     * @param returnValue
+     * @param returnType
+     * @param mavContainer
+     * @param webRequest
+     * @throws Exception
+     */
+    @Override
+    public void handleReturnValue(Object returnValue, MethodParameter returnType, ModelAndViewContainer mavContainer, NativeWebRequest webRequest) throws Exception {
+        //数据处理
+        String str = new Yaml().dump(returnValue);
+        //拿到响应
+        final HttpServletResponse nativeResponse = webRequest.getNativeResponse(HttpServletResponse.class);
+        //输出到响应流中
+        nativeResponse.setContentType("text/plain;charset=utf-8");
+        nativeResponse.getWriter().println(str);
+        //通知spring请求已经处理完成
+        mavContainer.setRequestHandled(true);
+
+    }
+}
+
+    @Bean
+    public MyRequestMappingHandlerAdapter myRequestMappingHandlerAdapter(){
+        final TokenArgumentResolver tokenArgumentResolver = new TokenArgumentResolver();
+
+        final MyRequestMappingHandlerAdapter myRequestMappingHandlerAdapter = new MyRequestMappingHandlerAdapter();
+
+        final YmlReturnValueHandler ymlReturnValueHandler = new YmlReturnValueHandler();
+
+        myRequestMappingHandlerAdapter.setCustomArgumentResolvers(List.of(tokenArgumentResolver));
+        myRequestMappingHandlerAdapter.setCustomReturnValueHandlers(List.of(ymlReturnValueHandler));
+        return myRequestMappingHandlerAdapter;
+    }
+        @Yml
+    @GetMapping("/user")
+    public User getUser(){
+        return new User("dxyer",22);
+    }
+
+
+        final byte[] contentAsByteArray = response.getContentAsByteArray();
+        System.out.println(new String(contentAsByteArray, StandardCharsets.UTF_8));
+  ```
+
+### 参数解析
+参数解析绑定示例：
+```java
+    public static void main(String[] args) throws Exception {
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(WebConfig.class);
+        final DefaultListableBeanFactory defaultListableBeanFactory = context.getDefaultListableBeanFactory();
+//控制器方法封装
+        HandlerMethod handlerMethod = new HandlerMethod(new TestController(),
+                TestController.class.getMethod("test2", String.class, int.class,String.class));
+        //准备ModelAndViewContainer
+        ModelAndViewContainer container = new ModelAndViewContainer();
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/test2");
+        request.setParameter("name","dxyer");
+        request.setParameter("age","18");
+
+        //做数据类型转换
+        DefaultDataBinderFactory factory = new DefaultDataBinderFactory(null);
+
+        for (MethodParameter methodParameter : handlerMethod.getMethodParameters()) {
+            //设置参数名解析起
+            methodParameter.initParameterNameDiscovery(new DefaultParameterNameDiscoverer());
+            final Annotation[] parameterAnnotations = methodParameter.getParameterAnnotations();
+            RequestParamMethodArgumentResolver resolver = new RequestParamMethodArgumentResolver(defaultListableBeanFactory,true);// true，不带@RequestParam的参数都会使用该解析器来进行解析
+             Object value = null;
+            if(resolver.supportsParameter(methodParameter)){
+                 value = resolver.resolveArgument(methodParameter, container, new ServletWebRequest(request), factory);
+            }
+            String annotations = "";
+            if(parameterAnnotations != null && parameterAnnotations.length > 0){
+                for (Annotation parameterAnnotation : parameterAnnotations) {
+                    annotations += parameterAnnotation.annotationType().getSimpleName() + ",";
+                }
+            }
+            System.out.println(methodParameter.getParameterIndex()+ ":"
+                    + methodParameter.getParameterType().getSimpleName()+ ","
+                            + methodParameter.getParameterName() + ","
+            + annotations + "->" + value) ;
+        }
+        
+    }
+     
+
+```
+
+### 参数解析组合模式
+逐一调用解析器来判断是否支持当前参数 --HandlerMethodArgumentResolverComposite
+```java
+ HandlerMethodArgumentResolverComposite composite = new HandlerMethodArgumentResolverComposite();
+        //多个解析器组合
+        composite.addResolvers( new RequestParamMethodArgumentResolver(defaultListableBeanFactory,true));
+```
+
+路径参数解析器
+PathVariableMethodArgumentResolver
+
+**方法参数名的获取**
+默认情况下 javac test1.java编译出来的参数名不会被记录
+javac -parameters test1.java 进行编译时，会记录方法参数名 --通过反射可以获取
+javac -g test1.java 编译后在本地变量表中能记录参数名称 --通过ASM能获取到，在spring中可以通过ParameterNameDiscoverer,只能获取普通类方法上的参数名称，对接口无效
+spring的DefaultParameterNameDiscoverer 同时支持了上面两种方式
+
+
+
+### 对象绑定与类型转换
+底层转换接口（有两套接口）
+* Printer接口将其他类型转化为String
+* Parser把String转化为其他类型
+* Formatter综合Printer和Parser功能
+* Converter把S转化为类型T
+
+高层转换接口
+
+### spring对泛型参数的获取
+使用GenericTypeResolver可以直接获取到泛型参数信息
+```java
+public class SG<WebConfig> {
+}
+public class SubG extends SG<WebConfig>{
+}
+   public static void main(String[] args) {
+        //使用jdk的api获取泛型参数类型
+        Type type = SubG.class.getGenericSuperclass();
+        if(type instanceof ParameterizedType){
+            ParameterizedType type1= (ParameterizedType) type;
+            System.out.println(type1.getActualTypeArguments()[0]);
+        }
+
+        //使用spring的api获取泛型参数类型
+        final Class<?> aClass = GenericTypeResolver.resolveTypeArgument(SubG.class, SG.class);
+        System.out.println(aClass);
+    }
+```
+
+### ControllerAdvice 控制器增强
+* 添加@ExceptionHandler 添加异常处理
+* 添加@ModelAttribute 补充模型数据
+* @InitBinder 绑定数据
+
+
+### 返回值处理器
+
+### messageConverter
+
+### @ControllerAdvice +ResponseBodyAdvice
+实现对返回值的自动类型转换
+```java
+    @ControllerAdvice
+    static class MyControllerAdvice implements ResponseBodyAdvice<Object>{
+
+        //判断满足条件转换返回值
+        @Override
+        public boolean supports(MethodParameter returnType, Class<? extends HttpMessageConverter<?>> converterType) {
+            //只有返回application/json的数据才需要包装
+            if(returnType.getMethodAnnotation(ResponseBody.class)!= null ||
+                    AnnotationUtils.findAnnotation(returnType.getContainingClass(),ResponseBody.class)!= null
+            ){
+                return true;
+            }
+            return false;
+        }
+
+        //实现转换逻辑
+        @Override
+        public Object beforeBodyWrite(Object body, MethodParameter returnType, MediaType selectedContentType, Class<? extends HttpMessageConverter<?>> selectedConverterType, ServerHttpRequest request, ServerHttpResponse response) {
+            if(body instanceof Result){
+                return body;
+            }
+            return Result.ok(body);
+        }
+    }
+```
+
+### @ControllerAdvice + @ExceptionHandler
+实现对异常的处理
+
+### tomcat的异常处理
+```
+    //定制tomcat的错误页面
+    @Bean
+    public ErrorPageRegistrar errorPageRegistrar(){
+        return new ErrorPageRegistrar() {
+            @Override
+            public void registerErrorPages(ErrorPageRegistry webserverFactory) {
+                //通过请求转发跳转到/error页面
+                webserverFactory.addErrorPages(new ErrorPage(("/error")));
+            }
+        };
+    }
+    //定制tomcat的错误页面 processor
+    @Bean
+    public ErrorPageRegistrarBeanPostProcessor errorPageRegistrarBeanPostProcessor(){
+        return new ErrorPageRegistrarBeanPostProcessor();
+    }
+```
+controller中的控制器方法
+```java
+    @RequestMapping("/test")
+    public ModelAndView test(){
+        int i  =1/0;
+        return null;
+    }
+
+        @RequestMapping("/error")
+    @ResponseBody
+    public Map<String,Object> error(HttpServletRequest request){
+        Map<String,Object> map =new HashMap<>();
+        final Throwable e = (Throwable) request.getAttribute(RequestDispatcher.ERROR_EXCEPTION);
+        map.put("error",e.getMessage());
+        return map;
+    }
+```
+
+### BasicErrorController--提供基本的错误处理映射
+配置BasicErrorController不需要自己在controller中定义error路径
+```
+    @Bean
+    public BasicErrorController basicErrorController(){
+        final ErrorProperties errorProperties = new ErrorProperties();
+        errorProperties.setIncludeException(true);
+        return new BasicErrorController(new DefaultErrorAttributes(),errorProperties);
+    }
+```
+
+
+
+
+
+
+
+
 
 ## 3. spring的基本实现原理
 使用简单工厂（beanFactory.getBean(...)） + 配置文件 + 反射(实例化bean) 实现bean的创建和管理
@@ -25,15 +2014,7 @@ BeanFactory是spring框架的顶层容器接口，主要功能是根据bean的�
 ## 7. BeanDefinition的作用是什么
 BeanDefinition 规定了创建Bean的具体细节，比如bean是单例还是原型类型，是否懒加载、依赖的bean的列表，是否自动注入、bean初始化后调用方法、bean销毁后调用的方法
 
-## 8. BeanFactory和ApplicationContext的区别是什么
-BeanFactory提供基本的bean获取功能，而ApplicationContext是BeanFactory的一个子接口，主要是提供BeanFactory的一些拓展功能，比如提BeanFactoryPostProcessor或BeanDefinitionRegistryPostProcessor实现对BeanDefinition的手动添加和修改操作，提供事件发布与监听的功能，提供BeanPostProcessor实现对bean初始化前后的修改等
-ApplicationContext也是对BeanFactory功能的组合
 
-ApplicationContext 提供的扩展功能：
-1. MessageResource：国际化支持
-2. ResourceLoader:提供对资源文件的管理（各种配置的加载）
-3. EnvironmentCapable:提供对系统环境变量及其他配置参数的管理
-4. ApplicationEventPublisher: 提供对事件发布与监听的支持
 
 
 ## 9.BeanFactory和FacotoryBean的区别
