@@ -2247,3 +2247,233 @@ web环境下
 * session 利用session.setAttribute()将bean设置到session中
 * request 利用request.setAttribute()
 * application 利用application.setAttribute()
+
+
+## springboot
+
+生成干净的只有pom.xml的文件：
+ curl -G https://start.spring.io/pom.xml -d packaging=war -o pom.xml
+
+ ### boot执行流程
+**springApplication构造分析**
+```java
+SpringApplication.run(App.class,args)
+```
+SpringApplication构造器中的执行流程：
+* 根据引导类确定BeanDefinition的来源（BeanDefinition的一个来源）
+* 推断应用的类型（非web应用、servlet web应用，react web应用）
+* 添加applicationContext的初始化器
+* 添加监听器与事件
+* 主类推断
+
+源码
+```java
+	public SpringApplication(ResourceLoader resourceLoader, Class<?>... primarySources) {
+		this.resourceLoader = resourceLoader;
+		Assert.notNull(primarySources, "PrimarySources must not be null");
+		this.primarySources = new LinkedHashSet<>(Arrays.asList(primarySources));
+		this.webApplicationType = WebApplicationType.deduceFromClasspath();
+		this.bootstrapRegistryInitializers = getBootstrapRegistryInitializersFromSpringFactories();
+		setInitializers((Collection) getSpringFactoriesInstances(ApplicationContextInitializer.class));
+		setListeners((Collection) getSpringFactoriesInstances(ApplicationListener.class));
+		this.mainApplicationClass = deduceMainApplicationClass();
+	}
+```
+推断应用类型：
+```java
+static WebApplicationType deduceFromClasspath() {
+		if (ClassUtils.isPresent(WEBFLUX_INDICATOR_CLASS, null) && !ClassUtils.isPresent(WEBMVC_INDICATOR_CLASS, null)
+				&& !ClassUtils.isPresent(JERSEY_INDICATOR_CLASS, null)) {
+			return WebApplicationType.REACTIVE;
+		}
+		for (String className : SERVLET_INDICATOR_CLASSES) {
+			if (!ClassUtils.isPresent(className, null)) {
+				return WebApplicationType.NONE;
+			}
+		}
+		return WebApplicationType.SERVLET;
+	}
+```
+代码演示
+```java
+    public static void main(String[] args) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+        SpringApplication springApplication = new SpringApplication(BootDemo01.class);
+        Set<String> sources = new HashSet<>();
+        //添加bean的来源
+//        sources.add("classpath:application.xml");
+//        springApplication.setSources(sources);
+        //推断应用类型
+        final Method deduceFromClasspath = WebApplicationType.class.getDeclaredMethod("deduceFromClasspath");
+        deduceFromClasspath.setAccessible(true);
+        System.out.println("应用类型为："+ deduceFromClasspath.invoke(null));
+        //对applicationContext扩展
+        springApplication.addInitializers(new ApplicationContextInitializer<ConfigurableApplicationContext>() {
+            @Override
+            public void initialize(ConfigurableApplicationContext applicationContext) {
+                if (applicationContext instanceof GenericApplicationContext) {
+                    GenericApplicationContext gac = (GenericApplicationContext) applicationContext;
+                    //对beandefinition进行扩展
+                    gac.registerBean("bean3",Bean3.class);
+                }
+            }
+        });
+        //监听器添加
+        springApplication.addListeners(new ApplicationListener<ApplicationEvent>() {
+            @Override
+            public void onApplicationEvent(ApplicationEvent event) {
+                //打印所有的事件
+                System.out.println("\t事件为："+ event.getClass());
+            }
+        });
+        //主类推断，判断main方法所在的类
+        Method deduceMainApplicationClass = SpringApplication.class.getDeclaredMethod("deduceMainApplicationClass");
+        deduceMainApplicationClass.setAccessible(true);
+        System.out.println("\t主类是： "+deduceMainApplicationClass.invoke(springApplication));
+        ConfigurableApplicationContext context = springApplication.run(args);
+        for (String beanDefinitionName : context.getBeanDefinitionNames()) {
+            //初始化器提供的来源为null
+           log.info("name:{},source:{}",beanDefinitionName,context.getBeanFactory().getBeanDefinition(beanDefinitionName).getResourceDescription());
+        }
+        context.close();
+    }
+    @Bean
+    public ServletWebServerFactory servletWebServerFactory(){
+        return new TomcatServletWebServerFactory();
+    }
+```
+
+**springApplication run方法分析（一共12步）** 
+
+1. 得到springApplicationRunListener，实际上是发布事件，发布application starting事件
+事件发布演示：
+```java
+    public static void main(String[] args) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, ClassNotFoundException, InstantiationException {
+        SpringApplication springApplication = new SpringApplication(BootDemo02.class);
+        //添加监听器
+        springApplication.addListeners(e -> System.out.println("发布了事件：" + e.getClass()));
+        //获取事件发布器名称
+        List<String> names = SpringFactoriesLoader.loadFactoryNames(SpringApplicationRunListener.class, BootDemo02.class.getClassLoader());
+        for (String name : names) {
+            System.out.println(name);
+            Class<?> clazz = Class.forName(name);
+            Constructor<?> constructor = clazz.getConstructor(SpringApplication.class, String[].class);
+            SpringApplicationRunListener publisher = (SpringApplicationRunListener) constructor.newInstance(springApplication, args);
+            //发布事件
+            //springboot开始启动
+            final DefaultBootstrapContext bootstrapContext = new DefaultBootstrapContext();
+            publisher.starting(bootstrapContext);
+            //准备环境完成之后
+            publisher.environmentPrepared(bootstrapContext,new StandardEnvironment());
+            //在spring容器创建并调用初始化器之后触发发送该事件
+            GenericApplicationContext context = new GenericApplicationContext();
+            publisher.contextPrepared(context);
+            //所有beanDefinition加载完毕之后发布该事件
+            publisher.contextLoaded(context);
+            //refresh()方法调用结束后，spring容器初始化完成，触发该事件
+            context.refresh();
+            publisher.started(context);
+
+            //springboot启动完毕
+            publisher.running(context);
+            //springboot启动过程中出现了错误
+            publisher.failed(context,new Exception("出错演示"));
+        }
+```
+
+2. 封装启动args (在第12步会使用这个封装的参数来执行)
+```java
+        //2. 封装启动参数
+        DefaultApplicationArguments applicationArguments = new DefaultApplicationArguments(args);
+```
+
+3.  初始化环境变量对象 ApplicationEnvironment
+默认包括系统环境变量和系统属性
+  
+ 添加commandLine的属性配置来源
+4. 将属性中驼峰、减号连接、下划线连接的属性进行统一匹配成建好匹配
+```java
+ ConfigurationPropertySource.attach(environment);
+```
+
+5. 对ApplicationEnvironment 进一步增强，使用EnvironmentPostProcessor进行处理
+ * 从各个来源添加配置信息，如添加application.properties 属性配置来源
+
+6. 将配置文件中的键值与SpringApplication中的属性进行绑定
+7. 输出springboot的banner信息
+
+  
+
+8. 创建spring容器
+9. 准备容器
+10.  从各种来源加载各种bean定义
+11.  refresh刷新容器
+```java
+        SpringApplication springApplication = new SpringApplication(BootDemo03.class);
+        springApplication.addInitializers(new ApplicationContextInitializer<ConfigurableApplicationContext>() {
+            @Override
+            public void initialize(ConfigurableApplicationContext applicationContext) {
+                System.out.println("执行初始化器增强");
+            }
+        });
+        //8.根据前面的推断构造spring 容器
+        final GenericApplicationContext applicationContext = createApplicationContext(WebApplicationType.SERVLET);
+        //9. 准备容器
+        for (ApplicationContextInitializer initializer : springApplication.getInitializers()) {
+            initializer.initialize(applicationContext);
+        }
+        //10. 从各种来源加载各种bean定义
+        //演示从配置类中加载bean定义
+        AnnotatedBeanDefinitionReader reader = new AnnotatedBeanDefinitionReader(applicationContext.getDefaultListableBeanFactory());
+        reader.register(Config1.class);
+        //从xml中读取bean定义
+//        XmlBeanDefinitionReader reader2 = new XmlBeanDefinitionReader(applicationContext.getDefaultListableBeanFactory());
+//        reader2.loadBeanDefinitions(new ClassPathResource("application.xml"));
+        ClassPathBeanDefinitionScanner scanner = new ClassPathBeanDefinitionScanner(applicationContext.getDefaultListableBeanFactory());
+        scanner.scan("com.dxy.data.springtest.boot.bean");
+        //11 执行refresh刷新容器
+        applicationContext.refresh();
+        for (String beanDefinitionName : applicationContext.getBeanDefinitionNames()) {
+            System.out.println("name:" + beanDefinitionName +
+                    ",-----source:" + applicationContext.getBeanFactory().getBeanDefinition(beanDefinitionName).getResourceDescription());
+        }
+```
+
+12.  执行runner 两种runner方法执行
+```java
+        @Bean
+        public CommandLineRunner commandLineRunner(){
+            return new CommandLineRunner() {
+                @Override
+                public void run(String... args) throws Exception {
+                    System.out.println("执行commandrunner");
+                }
+            };
+        }
+
+        @Bean
+        public ApplicationRunner applicationRunner(){
+            return new ApplicationRunner() {
+                @Override
+                public void run(ApplicationArguments args) throws Exception {
+                    System.out.println("执行application runner");
+                }
+            };
+        }
+
+
+
+        //12.执行runner方法
+        for (CommandLineRunner runner : applicationContext.getBeansOfType(CommandLineRunner.class).values()) {
+            runner.run(args);
+        }
+        for (ApplicationRunner applicationRunner : applicationContext.getBeansOfType(ApplicationRunner.class).values()) {
+            applicationRunner.run(applicationArguments);
+        }
+```
+
+**boot启动总结**
+
+
+
+
+
