@@ -2475,5 +2475,249 @@ static WebApplicationType deduceFromClasspath() {
 
 
 
+## tomcat内嵌容器
+
+### tomcat中的重要组件
+Connector 协议端口
+Engine  
+  host
+  Context 应用，包括html、jsp、class文件（servlet、filter、listener）等
+
+tomcat 手动启动
+```java
+    public static void main(String[] args) throws IOException, LifecycleException {
+        Tomcat tomcat = new Tomcat();
+        tomcat.setBaseDir("tomcat");
+        //设置docbase,临时目录
+        File docBase = Files.createTempDirectory("boot.").toFile();
+        //创建tomcat项目，在tomcat中称为context
+         Context context = tomcat.addContext("", docBase.getAbsolutePath());
+
+        //添加 servlet
+        context.addServletContainerInitializer(new ServletContainerInitializer() {
+            @Override
+            public void onStartup(Set<Class<?>> c, ServletContext ctx) throws ServletException {
+                final HelloServlet helloServlet = new HelloServlet();
+                ctx.addServlet("hello",helloServlet).addMapping("/hello");
+            }
+        }, Collections.emptySet());
+        //启动tomcat
+        tomcat.start();
+
+        //设置连接信息
+        Connector connector = new Connector(new Http11Nio2Protocol());
+        connector.setPort(8080);
+        tomcat.setConnector(connector);
+        docBase.deleteOnExit();
+    }
+
+   //sevlet
+   public class HelloServlet extends HttpServlet {
+
+    @Override
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        resp.setContentType("text/html;charset=utf-8");
+        resp.getWriter().println("<h2>hello</h2>");
+    }
+} 
+```
+
+### spring mvc 与tomcat的整合
+下面的代码实际上是在spring的onfresh()方法中执行了，实现了对tomcat的创建与启动
+```java
+public class TomcatDemo02 {
+
+    public static void main(String[] args) throws IOException, LifecycleException {
+        Tomcat tomcat = new Tomcat();
+        tomcat.setBaseDir("tomcat");
+        //设置docbase,临时目录
+        File docBase = Files.createTempDirectory("boot.").toFile();
+        //创建tomcat项目，在tomcat中称为context
+         Context context = tomcat.addContext("", docBase.getAbsolutePath());
+         //创建spring context
+        WebApplicationContext springContext = getWebApplicationContext();
+
+
+        //添加 servlet
+        context.addServletContainerInitializer(new ServletContainerInitializer() {
+            @Override
+            public void onStartup(Set<Class<?>> c, ServletContext ctx) throws ServletException {
+                final HelloServlet helloServlet = new HelloServlet();
+                ctx.addServlet("hello",helloServlet).addMapping("/hello");
+//                 DispatcherServlet dispatcherServlet = springContext.getBean(DispatcherServlet.class);
+//                 ctx.addServlet("dispatcherServlet",dispatcherServlet).addMapping("/");
+                //将spring管理的servlet都放入servletcontext中
+                for (ServletRegistrationBean registrationBean : springContext.getBeansOfType(ServletRegistrationBean.class).values()) {
+                    registrationBean.onStartup(ctx);
+                }
+            }
+        }, Collections.emptySet());
+        //启动tomcat
+        tomcat.start();
+
+        //设置连接信息
+        Connector connector = new Connector(new Http11Nio2Protocol());
+        connector.setPort(8080);
+        tomcat.setConnector(connector);
+        docBase.deleteOnExit();
+    }
+
+    public static WebApplicationContext getWebApplicationContext(){
+        AnnotationConfigWebApplicationContext context = new AnnotationConfigWebApplicationContext();
+        context.register(Config.class);
+        context.refresh();
+        return context;
+    }
+
+    @Configuration
+    static class Config{
+        @Bean
+        public DispatcherServletRegistrationBean registrationBean(DispatcherServlet dispatcherServlet){
+            return new DispatcherServletRegistrationBean(dispatcherServlet,"/");
+        }
+        @Bean
+        public DispatcherServlet dispatcherServlet(WebApplicationContext applicationContext){
+            return new DispatcherServlet(applicationContext);
+        }
+
+        @Bean
+        public RequestMappingHandlerAdapter requestMappingHandlerAdapter(){
+            RequestMappingHandlerAdapter handlerAdapter = new RequestMappingHandlerAdapter();
+            handlerAdapter.setMessageConverters(List.of(new MappingJackson2HttpMessageConverter()));
+            return handlerAdapter;
+        }
+        @RestController
+        static class MyController{
+            @GetMapping("/hello2")
+            public Map<String,Object> hello() {
+                Map<String, Object> map = new HashMap<>();
+                map.put("hello","hello spring");
+                return map;
+            }
+        }
+    }
+}
+```
+
+## 自动配置类
+第三方应用的配置类需要进行整合时为了方便需要进行自动配置
+1. 通过@Import来导入第三方的配置类
+```java
+public class AutoConfigDemo01 {
+
+    public static void main(String[] args) {
+
+        GenericApplicationContext context = new GenericApplicationContext();
+        context.registerBean("MyConfig",MyConfig.class);
+        context.registerBean(ConfigurationClassPostProcessor.class);
+        context.refresh();
+        for (String beanDefinitionName : context.getBeanDefinitionNames()) {
+            System.out.println(beanDefinitionName);
+        }
+    }
+
+    //本项目配置类
+    @Configuration
+    //通过import导入第三方配置类
+    @Import(ThirdAutoConfig1.class)
+    static class MyConfig{
+
+    }
+    //第三方配置类
+    @Configuration
+    static class ThirdAutoConfig1 {
+        @Bean
+        public Bean1 bean1() {
+            return new Bean1();
+        }
+    }
+}
+```
+2. 实现importSelector接口，结合@Import 导入配置类
+```java
+ //本项目配置类
+    @Configuration
+    //通过import导入第三方配置类
+    @Import(MyImportSelector.class)
+    static class MyConfig{
+
+    }
+
+    static class MyImportSelector implements ImportSelector{
+
+        @Override
+        public String[] selectImports(AnnotationMetadata importingClassMetadata) {
+            return new String[]{ThirdAutoConfig1.class.getName(),ThirdAutoConfig2.class.getName()};
+        }
+
+    }
+
+
+    //第三方配置类
+    @Configuration
+    static class ThirdAutoConfig1 {
+
+        @Bean
+        public Bean1 bean1() {
+            return new Bean1();
+        }
+    }
+    @Configuration
+    static class ThirdAutoConfig2 {
+
+        @Bean
+        public Bean2 bean2() {
+            return new Bean2();
+        }
+    }
+
+```
+3. 使用spring.factories配置文件添加配置类实现自动导入配置类
+spring.factories
+```
+com.dxy.data.springtest.autoconfig.AutoConfigDemo01$MyImportSelector =\
+com.dxy.data.springtest.autoconfig.AutoConfigDemo01.ThirdAutoConfig1,\
+com.dxy.data.springtest.autoconfig.AutoConfigDemo01.ThirdAutoConfig2
+```
+
+```java
+    static class MyImportSelector implements ImportSelector{
+
+        @Override
+        public String[] selectImports(AnnotationMetadata importingClassMetadata) {
+            List<String> list = SpringFactoriesLoader.loadFactoryNames(MyImportSelector.class, null);
+            return list.toArray(new String[0]);
+        }
+
+    }
+```
+4. 当配置类中出现了相同的bean，默认情况下本项目的bean会生效
+- @Import导入的配置类先会被解析，本项目的配置类中Bean会后解析
+- springboot中牧人不允许相同名称相同类型的Bean被注册
+- 实现DeferredImportSelector接口可以将第三方的配置类导入推出，优先导入本项目的配置类中的Bean
+- 出现同名bean时，使用@ConditionalOnMissingBean 忽略已经导入的bean
+
+### 事务自动配置
+
+### 条件自动装配
+
+### FactoryBean
+* 工厂类产生的对象会走初始化后的流程，可以被代理
+* 当通过BeanFactory根据类型获取FactoryBean创建的对象时，如果没有在工厂类指定返回对象的类型，则spring会抛出异常
+
+### @Indexed
+编译时根据@Indexed生成META-INF/spring.components文件
+如果存在文件则直接根据文件中的配置扫描指定的bean，不存在走包扫描方式
+
+
+### @Value
+
+
+### @Autowired
+
+### 事件监听器
+
+
+
 
 
