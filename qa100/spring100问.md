@@ -16,7 +16,7 @@ ApplicationContext 提供的扩展功能：
 3. EnvironmentCapable:提供对系统环境变量及其他配置参数的管理
 4. ApplicationEventPublisher: 提供对事件发布与监听的支持
 
-**MessageResource：国际化支持**
+**MessageSource：国际化支持**
 根据固定的key找到翻译后的结果
 context.getMessage()
 spring的国际化文件都放在messages.properties的文件中，
@@ -394,7 +394,7 @@ public class MyBeanPostProcessor  implements InstantiationAwareBeanPostProcessor
     @Override
     public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
         if(beanName.equals("lifeCycleBean")){
-            log.info("==========初始化之前执行，这里返回的对象会替换掉原本的bean，如代理增强");
+            log.info("==========初始化之后执行，这里返回的对象会替换掉原本的bean，如代理增强");
         }
         return bean;
     }
@@ -563,7 +563,7 @@ public class Bean1 {
 ```
 
 ## BeanFactory的后置处理器
-* ConfigurationClassPostProcessor--处理@Configuration、@Import、@Bean、@ImportSource、@ComponentScan等和容器相关的注解
+**ConfigurationClassPostProcessor--处理@Configuration、@Import、@Bean、@ImportResource、@ComponentScan等和容器相关的注解**
 * mybatis提供的MapperScannerConfigurer 对mybatis的mapper接口进行扫描（可以被@MapperScaner代理）
 ```java
 @Configuration
@@ -687,11 +687,25 @@ public static void main(String[] args) throws IOException {
         //容器销毁
        context.close();
 ```
-### mybatis-spring中的MapperFactoryBean
+### mybatis-spring 整合原理
+在spring.factories中配置自动配置类MybatisAutoConfiguration
+在MybatisAutoConfiguration 做了如下配置：
+1. 创建SqlSessionFactory对象（实际上创建了一个SqlSessionFactoryBean）放在spring容器中
+2. 创建SqlSessionTemplate
+
+
+* SqlSessionFactory 在哪里创建 ，在MybatisAutoConfiguration 配置类中进行创建
+* SqlSession 在哪里创建 ，
+* Mapper接口的代理类在哪里创建
+
+
+MapperFactoryBean
 * 扫描包下的class文件
 * 将class文件生成BeanDefinition
 * 将BeanDefinition注册到BeanFactory中
 通过MapperFactoryBean实现对mapper接口的代理
+
+
 
 
 ## Aware接口
@@ -760,8 +774,8 @@ context.refresh() 的执行过程：
 - 然后添加bean的后置处理器，
 - 然后初始化单例bean，
 
-当java配置类中包含了BeanFactoryPostProcessor时，要先创建BeanFactoryPostProcessor的前提是先创建java泪痣类，而此时BeanPostProcessor还未准备好，导致配置类中的@Autowired，@PostConstruct等注解失效
-解决方案是通过spring的内置功能代替扩展功能，实现Aware、InitializingBean接口来注入属性
+**当java配置类中包含了BeanFactoryPostProcessor时，要先创建BeanFactoryPostProcessor的前提是先创建java配置类，而此时BeanPostProcessor还未准备好，导致配置类中的@Autowired，@PostConstruct等注解失效**
+**解决方案是通过spring的内置功能代替扩展功能，实现Aware、InitializingBean接口来注入属性**
 
 ## 初始化与销毁
 ```java
@@ -1137,6 +1151,11 @@ public class CglibDemo {
   * advisor切面 -- 包含一个通知和一个切点
 
 ### 使用spring的原生AOP接口实现aop
+1. 创建切入点
+2. 创建通知
+3. 创建切面
+4. 创建代理（默认情况下使用cglib代理）
+5. 执行被代理方法
 ```java
 public class SpringAopDemo {
 
@@ -1197,6 +1216,7 @@ public class SpringAopDemo {
 * proxyTargetClass=true,使用cglib实现
 
 ### 切点匹配规则
+@Transactional 的实现原理
 ```java
 public class SpringAopDemo2 {
 
@@ -1260,6 +1280,7 @@ public class SpringAopDemo2 {
 
         }
     }
+}
 ```
 ### spring中的两种切面 @Aspect、Advisor
 手动注册切面处理
@@ -1566,10 +1587,27 @@ public class SpringAopDemo5 {
         public void after(int x) {
             System.out.println("aspect after....");
         }
-```   
+``` 
+
+### spring事务管理实现原理
+Spring框架的事务管理是通过AOP（面向切面编程）机制实现的。Spring提供了一种声明式事务管理方式，允许你在代码中专注于业务逻辑，而不需要显式地处理事务的开启、提交、回滚等细节。事务管理的实现原理如下：
+* 代理模式：Spring使用代理模式来管理事务。当你使用@Transactional注解或XML配置声明式事务时，Spring会在运行时动态地创建一个代理对象，该代理对象拦截被@Transactional注解标记的方法调用，并在方法执行前后进行事务管理。
+
+* 切面（Aspect）：Spring的事务管理通过AOP切面实现。Spring使用切面将事务管理逻辑织入到你的业务逻辑中。在事务管理中，切面包括了在方法执行前开启事务、方法执行后提交事务，以及在方法执行过程中发生异常时回滚事务等逻辑。
+
+* 事务管理器（Transaction Manager）：Spring框架提供了不同类型的事务管理器，如JDBC、Hibernate、JPA等，它们实现了事务的底层细节。你可以根据使用的数据访问框架选择合适的事务管理器。
+
+* 事务隔离级别和传播行为：Spring允许你指定事务的隔离级别和传播行为。事务隔离级别定义了多个事务同时运行时的隔离程度，而传播行为定义了方法如何参与到现有的事务中。
+* 数据库连接和连接管理：Spring事务管理使用数据库连接来执行事务操作。事务管理器负责管理连接的获取、释放以及在事务完成后的提交或回滚。
 ## springmvc
 ### dispatchServlet 初始化时机
+
 基本环境配置：
+
+web基本组件：
+1. 创建内嵌web容器工厂TomcatServletWebServerFactory（可以是其他容器）
+2. 创建前端控制器DispatcherServlet
+3. 将前端控制器以bean的方式注入到spring容器中
 ```java
 @Configuration
 @ComponentScan
@@ -1702,6 +1740,7 @@ spring.mvc.servlet.load-on-startup=1
   ```
 ### 自定义参数解析器
   参照上面的adapter添加参数解析器的方式，可以自定义参数解析器对参数来进行解析
+  实现功能：通过自定义参数解析器来从请求的header参数中获取到token并与有@Token注解的参数进行绑定
 ```java
 @Target({ElementType.PARAMETER})
 @Retention(RetentionPolicy.RUNTIME)
@@ -1909,7 +1948,7 @@ public class SubG extends SG<WebConfig>{
 ### messageConverter
 
 ### @ControllerAdvice +ResponseBodyAdvice
-实现对返回值的自动类型转换
+实现对返回值的自动类型转换,对于json格式返回值的数据，自动包装外层的响应结果类
 ```java
     @ControllerAdvice
     static class MyControllerAdvice implements ResponseBodyAdvice<Object>{
@@ -1939,9 +1978,31 @@ public class SubG extends SG<WebConfig>{
 
 ### @ControllerAdvice + @ExceptionHandler
 实现对异常的处理
+```java
+@ControllerAdvice
+public class MyControllerAdvice2 {
+
+    @ExceptionHandler({BindException.class})
+    public Result handMethodArgumentNotValidException(BindException ex) {
+        ObjectError objectError = (ObjectError)ex.getBindingResult().getAllErrors().get(0);
+        return Result.error(HttpStatus.BAD_REQUEST.value(), objectError.getDefaultMessage());
+    }
+
+    @ExceptionHandler({IllegalArgumentException.class})
+    public Result handleIllegalArgumentException(IllegalArgumentException ex) {
+        this.handleException(ex);
+        return Result.error(HttpStatus.BAD_REQUEST.value(), ex.getMessage());
+    }
+    
+    private void handleException(Exception e) {
+        e.printStackTrace();
+    }
+
+}
+```
 
 ### tomcat的异常处理
-```
+```java
     //定制tomcat的错误页面
     @Bean
     public ErrorPageRegistrar errorPageRegistrar(){
@@ -1979,7 +2040,7 @@ controller中的控制器方法
 
 ### BasicErrorController--提供基本的错误处理映射
 配置BasicErrorController不需要自己在controller中定义error路径
-```
+```java
     @Bean
     public BasicErrorController basicErrorController(){
         final ErrorProperties errorProperties = new ErrorProperties();
@@ -1987,11 +2048,6 @@ controller中的控制器方法
         return new BasicErrorController(new DefaultErrorAttributes(),errorProperties);
     }
 ```
-
-
-
-
-
 
 
 
@@ -2019,7 +2075,7 @@ BeanDefinition 规定了创建Bean的具体细节，比如bean是单例还是原
 
 ## 9.BeanFactory和FacotoryBean的区别
 BeanFactory是spring bean的容器（工厂），用来生产bean
-FactoryBean是spring 中的接口接口，实现FactoryBean的类是spring中的一种特殊的bean，通过接口的getObject方法获取到的才是bean的真实实例
+FactoryBean是spring 中的接口，实现FactoryBean的类是spring中的一种特殊的bean，通过接口的getObject方法获取到的才是bean的真实实例
 
 ## 10. IoC的优缺点
 优点：实现松耦合，提高程序的灵活性和可维护性
@@ -2032,7 +2088,7 @@ IoC加载的过程可以从Bean的生命周期的角度来看
 从编码到spring容器启动bean的完整周期可以分成以下四个阶段：
 1. 概念阶段，即将bean的定义写入到XML中，或被@Configuration标注的java配置类中，或使用@Component注解在具体的bean上，定义Bean的细节，比如Bean的scope、bean的init-method、destroy-method等
 2. 模型阶段，这一阶段spring容器将配置文件或配置类中的bean定义加载解析成BeanDefinition，放在BeanDefinitionMap中
-3. 实例化阶段，这一阶段spring容器通过遍历baanDefinitionMap拿到bean的定义，根据定义的细节使用反射、cglib（或动态代理）创建bean的实例，这时bean的属性还没有进行依赖注入
+3. 实例化阶段，这一阶段spring容器通过遍历beanDefinitionMap拿到bean的定义，根据定义的细节使用反射、cglib（或动态代理）创建bean的实例，这时bean的属性还没有进行依赖注入
 4. 最终使用阶段，这一阶段spring容器通过依赖注入将bean的属性进行注入，这一阶段之后，通过beanFactory.getBean()获取到bean就是这个阶段产生的bean
 
 ## 12. spring的IoC扩展点及调用时机
@@ -2050,13 +2106,33 @@ IoC加载的过程可以从Bean的生命周期的角度来看
 8. 判断bean是否实现了各种aware接口，如果实现了，就调用相应的aware接口中的方法（一般是用于将容器中的资源直接给到bean方便bean的操作）
 9. 判断Bean是否配置了AOP拦截，有则使用jdk代理或cglib实现代理
 10. 将bean放入singletonBeanMap（单例池中）
-11. 判断类的方法中是否有标注了PreDestroy注解的方法，有就利用反射调用标注了
+11. 判断类的方法中是否有标注了PreDestroy注解的方法，有就利用反射调用标注了@PreDestroy的方法
 
 ## 15. spring 循环依赖中的三级缓存
 1. 一级缓存： singletonObjects，存储已经完全初始化好，经历了完整的bean创建生命周期的bean，可以直接取出来使用
 2. 二级缓存：earlySingletonObjects，存储刚刚实例化但还未进行属性注入的bean，或是需要bean需要aop时，进行提前aop后的aop代理对象
-3. 三级缓存： singletonFactories，存储被ObjectFactory包装的刚刚进行实例化且还未进行属性注入的bean对象
+3. 三级缓存： singletonFactories，存储被ObjectFactory包装的刚刚进行实例化且还未进行属性注入的bean对象，存放要被代理的对象
 解决循环依赖的核心思想：找到能打破循环依赖的点
+
+spring 无法解决的循环依赖：
+1. 原型bean 通过setter方式注入无法解决
+2. 构造器注入bean无法解决
+3. 单例的代理bean无法解决
+4. 设置@DenependsOn注解的无法解决循环依赖
+
+
+三级缓存的解决循环依赖
+如果AS、 BS两个bean相互通过Autowired依赖，创建时的流程如下：
+
+标记AS为正在创建中，反射创建其实例，其对象工厂放入第三层缓存
+初始化AS实例时发现需要依赖注入BS，则获取BS的实例
+标记BS为正在创建中，反射创建其实例，其对象工厂放入第三层缓存
+初始化BS实例时发现需要依赖注入AS，则获取AS的实例
+注意！这时候从缓存中获取时，AS为正在创建中且第三层缓存有AS的值了，所以调用缓存的对象工厂的getObject方法，把返回的AS实例放入第二层缓存，删除第三层缓存
+BS实例初始化完成，放入第一层缓存，移除第二、三层中的缓存
+回到第2步，AS实例初始化完成，放入第一层缓存，移除第二、三层中的缓存
+
+设计三级缓存是为了解决出现代理类循环依赖的情况
 
 ## 16 spring 整合mybatis的原理（与springboot的starter的自动注入原理类似）
 核心思想:将myabtis的配置类、sqlSession、mapper的代理类都放入到spring容器，由spring来管理
@@ -2067,9 +2143,9 @@ IoC加载的过程可以从Bean的生命周期的角度来看
 
 ## 17 spring 的包扫描原理
 
-1. 扫描的时机： 在BeanFactoryprocessor的调用时进行包扫描
+1. 扫描的时机： 在BeanFactoryprocessor调用时进行包扫描
 2. 扫描得到的结果：扫描实际上拿到的是容器中bean的BeanDefinition
-3. 扫描启动的方式：通过@ComponentScan中的basePackages拿到要秒扫的路径
+3. 扫描启动的方式：通过@ComponentScan中的basePackages拿到要扫描的路径
 4. 扫描中用到的核心类：ClasspathBeanDefinitionScanner
 5. 扫描使用的技术：ASM，spring为什么没有通过反射的方式来进行class文件的扫描，因为使用反射来扫描是需要将包下的所有的class加载到虚拟机内存中，如果class文件过多则会造成启动过程中内存占用过高的问题。使用ASM技术可以解析每个class文件对象，得到class的元数据信息
 6. 在spring扫描包的过程中，如果扫描到两个bean的名字相同（可能是由于包路径重复导致的重复扫描），当beandefinition中的classname不一致，则会报错，如果classname一致，可以判定为同一个包下的同一个bean被扫描了两次导致的问题，spring会忽略掉被再次扫描的那个beandefinition
@@ -2119,21 +2195,22 @@ springboot在spring 的启动流程基础上，增加了前期的准备工作（
 3. 将启动类放入primarySources
 4. 根据classpth下的类推断出应该生成什么类型的applicationContext（webflux、servlet）
 5. 使用spi机制通过SpringFactoryLoader获取key为org.springframework.context.ApplicationContextInitializer的所有值
+   ApplicationContextInitializer说明：用于在spring容器刷新之前初始化Spring ConfigurableApplicationContext的回调接口，容器刷新之前调用该类的 initialize 方法，可以使用spi的方式引入spring容器
 6. 使用spi机制通过SpringFactoryLoader获取key为org.springframework.context.ApplicationListener的所有值（读取监听器）
 7. 推断启动main方法的类（使用RuntimeException获取运行栈）
 run方法的执行：
-8. 使用StopWatch记录开始时间
-9. 开启headless模式
-10. 使用spi机制通过SpringFactoryLoader从spring.factories中获取SpringApplicationRunListener的组件，用来运行监听器
-11. 根据命令行参数 实例化一个ApplicationArguments
-12. 预初始化环境，读取环境变量、配置文件信息
-13. 忽略实现了BeanInfo接口的bean
-14. 打印banner信息
-15. 创建spring 的上下文ApplicationContext（通过反射实现）
-16. 预初始化上下文（环境变量Envoriment的设置）
-17. 获取当前spring上下问的BeanFactory，解析main方法对应类（启动类）上的注解信息
-18. refreshContext加载spring的IOC容器（spring的配置类都是通过invokeBeanFacotoryPostProcessors这个方法去执行的），这一步时spring 容器启动最关键的一步，加载所有的自动配置类，创建servlet容器
-19. 记录springboot启动结束时间
+1. 使用StopWatch记录开始时间
+2. 开启headless模式
+3.  使用spi机制通过SpringFactoryLoader从spring.factories中获取SpringApplicationRunListener的组件，用来运行监听器
+4.  根据命令行参数 实例化一个ApplicationArguments
+5.  预初始化环境，读取环境变量、配置文件信息
+6.  忽略实现了BeanInfo接口的bean
+7.  打印banner信息
+8.  创建spring 的上下文ApplicationContext（通过反射实现）
+9.  预初始化上下文（环境变量Envoriment的设置）
+10. 获取当前spring上下问的BeanFactory，解析main方法对应类（启动类）上的注解信息
+11. refreshContext加载spring的IOC容器（spring的配置类都是通过invokeBeanFacotoryPostProcessors这个方法去执行的），这一步时spring 容器启动最关键的一步，加载所有的自动配置类，创建servlet容器
+12. 记录springboot启动结束时间
 
 ## 20 实现自定义starter
 1. 编写自动配置类
@@ -2164,7 +2241,7 @@ run方法的执行：
 3. 使用@ConfigurationProperties标志在配置文件中配置的属性，使用@EnableConfigurationProperties来启用配置属性
 4. 使用各种@Conditional的变种注解实现对配置类或配置组件是否生效的控制
 
-
+以上 @Configuration、@Import、@ImportResource等都是通过ConfigurationClassPostProcessor这个工厂后置处理器来实现
 
 
 ## 23 springboot 启动web容器（tomcat的原理）
@@ -2177,6 +2254,8 @@ run方法的执行：
    * 导入DeferredImportSelector接口的类，与ImportSelector类似，也会去执行相应的方法拿到类名然后加载类到spring容器中
    * 导入ImportBeanDefinitionRegistrar接口的实现类，执行registerBeanDefinitions方法将自定义的BeanDefinition注入到spring容器中（mybatis就是使用的这种方式实现将mapper接口注入到spring容器中从而实现sql的查询）
 @ImportResource 导入一个xml格式的配置文件
+
+@Import 通过工厂后置处理器ConfigurationClassPostProcessor实现对@Import中配置类的家在
 
 ## 25 spring的Bean的后置处理器
 
@@ -2716,6 +2795,24 @@ com.dxy.data.springtest.autoconfig.AutoConfigDemo01.ThirdAutoConfig2
 ### @Autowired
 
 ### 事件监听器
+
+
+### springboot配置加载优先级
+
+springboot支持配置文件、环境变量、命令行参数等多种方式来加载配置，其中的优先级顺序如下：
+1. 命令行参数：命令行参数会覆盖其他配置，通过 `--`来指定配置的 ，如 `java -jar myapp.jar --server.port=8080`
+2. 系统属性：通过-D参数来设置系统属性， 如 `java -jar myapp.jar -Dserver.port=8080`
+3. 环境变量，使用环境变量来设置配置属性，如 `SERVER_PORT=8080`
+4. 使用配置文件.properties或.yml， 配置文件优先级（如果指明了profile，则profile中的配置优先）：
+   1. jar包外部config目录下（执行java -jar启动命令中的config目录）的yml配置文件
+   2. jar包同级目录下的yml配置文件
+   3. jar包内部classpath 下的config目录下的配置文件
+   4. jar包内classpath目录下的配置文件
+在实际使用中发现一个奇怪的问题：在被依赖的jar包中的classpath下添加了application.properties文件，application.properties不生效，但使用application.yml时配置文件生效，暂时还没搞清楚其中的缘由
+猜测：
+在spring中yml配置文件的优先级高于properties配置文件，如果找到了yml配置文件，则yml中的配置文件会覆盖properties中的配置文件
+在项目中，A应用依赖于B jar包，A、B中同时使用了properties配置文件，则B jar包中的配置文件不生效；如果A中使用properties，B中使用了yml，则B中yml配置文件生效;如果在A中使用了yml文件，在B中也使用yml配置文件，则B中的yml配置文件不会生效
+
 
 
 

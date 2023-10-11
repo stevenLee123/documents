@@ -440,7 +440,7 @@ Transformation算子主要包括：map、mapPartitions、flatMap、filter、unio
 Action算子主要包括：reduce、collect、show、count、foreach、saveAsTextFile等。
 * job：当程序运行遇到一个action算子时，就会提交一个job，执行前面的一系列操作，通常一个任务中会有多个job
 * stage：一个job通常包含多个stage，stage之间按照顺序执行。一个job中会包含多个算子操作，这些算子都是将一个父RDD转换为子RDD，如果一个父RDD只能进入到一个子RDD，比如map，union等操作，称为窄依赖（narrow  dependency），否则会形成宽依赖（wide dependency），宽依赖又称为shuffle依赖，比如groupByKey，reduceByKey。stage的划分就是根据shuffle依赖进行的，shuffle依赖是两个stage的分界点。因为数据可能存放在HDFS不同的节点上，下一个stage的执行首先要去拉取上一个stage的数据（shuffle read操作），保存在自己的节点上，就会增加网络通信和IO。Shuffle操作其实是一个比较复杂的过程，这里暂且不表。
-* task ：代表着spark中最细的执行单元，taask的数量代表着stage的并行度。每个RDD分区都会起一个task，rdd的分区数据决定了task的数据，每个task执行的结果生成了目标rdd的一个partition。在map阶段partition数目保持不变，reduce阶段会触发shuffle操作，可能由于聚合操作导致分区数量变化
+* task ：代表着spark中最细的执行单元，task的数量代表着stage的并行度。每个RDD分区都会起一个task，rdd的分区数据决定了task的数据，每个task执行的结果生成了目标rdd的一个partition。在map阶段partition数目保持不变，reduce阶段会触发shuffle操作，可能由于聚合操作导致分区数量变化
 
 
 

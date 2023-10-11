@@ -1,10 +1,154 @@
 # linux
+操作系统时计算机硬件和用户之间的桥梁
+
+## 虚拟机中的三种网络连接模式
+
+桥接模式:虚拟系统可以和外部系统相互通信，但是容易造成IP冲突
+NAT模式：网络地址转换，虚拟系统可以和外部系统通信，外部系统无法访问虚拟机，不会造成IP冲突
+仅主机模式： 独立系统，不和外部发生联系
+
+## 磁盘分区
+swap分区：临时充当内存
+boot引导分区
+root根分区
+
+通过vmtools 来实现宿主机和虚拟机的共享文件夹
+
+kdump 内存崩溃转储机制
+
+## linux 目录介绍
+层级式的树状目录结构
+在linux中，一切皆是文件
+/boot ：启动系统用到的文件
+/dev   硬件映射成对应的文件
+/bin    存放经常使用的目录 /usr/bin  /usr/local/bin 
+/sbin super bin 存放管理员使用的命令
+/lib 开机所需要最基本的动态链接共享库
+/lost+found 存放系统非法关机后的文件
+/etc 系统管理所需要的配置文件，如mysql配置文件 my.conf
+/usr 一般用户的应用程序和文件放在这个目录下
+/proc 虚拟目录，系统内存映射回去系统信息
+/srv service，存放服务启动后需要提取的数据
+/sys 系统目录
+/tmp 存放临时文件
+/mnt 让用户临时挂载别的文件系统的，可以将外部的存储挂在在mnt下，让后进入该目录就能看到里面的内容
+/media linux自动识别一些设备，如u盘，linux会把识别的设备挂载到该目录
+/opt 给主机额外安装软件所存放的目录
+/usr/local 软件安装的目标目录
+/var  存放日志等不断扩充的文件
+/selinux 安全子系统
+
+
+
+## 远程登录
+
+
+
+
+
 
 ## vim/vi
+
 三种模式：
 > 命令模式，刚用vi打开文件，进入命令模式
-> 输入模式：按i（insert）进入输入模式
-> 底线模式：esc，再按shift+: 进入底线模式
+  快捷键：
+  *  yy 拷贝当前行
+  *  p 粘贴拷贝内容
+  *  4yy 拷贝当前行（包含当前行）往下的4行
+  *  dd删除当前行
+  *  4dd 删除当前行（包含当前行）往下的4行
+  *  G 定位到最后一行
+  *  gg定位到第一行
+  *  u 撤销，撤销上一次操作
+  *  20G，定位到第20行
+  
+
+> 输入模式：按i（insert），o, O,I,A,R,r 都可以进入输入模式
+
+> 底线模式：esc，再按shift+: 进入底线模式，输入wq（保存并退出）
+  常用命令：
+  * q! 强制退出，不保存
+  * /abc 查找abc字符串，使用n（next）进行下一个匹配查找
+  * set nu 显示行号
+  * set nonu 取消显示行号
+
+## 关机重启
+关机：
+shutdown -h now 立即关机 h表示halt
+shutdown -h 1 一分钟后关机
+shutdown -r now 立即重启
+halt 关机
+reboot 立即重启
+sync 将内存数据同步到磁盘
+
+## 登陆注销
+su - root 切换到root用户
+logout 注销用户（图形界面（运行级别3）注销无效）
+exit 退出终端或注销用户
+
+## 用户管理
+useradd 添加用户
+
+useradd -d /home/test abc 指定/home/test为新用户abc的工作目录
+
+passwd abc 修改用户abc的密码
+
+userdel abc 删除abc用户，不删除用户目录
+userdel -r abc 删除abc用户，并删除用户目录
+
+id abc 查询用户abc的信息
+who/whoami 查看当前登陆用户
+
+## 用户组
+创建组
+groupadd testgroup1
+删除
+groupdel testgroup1
+添加一个用户并分配组
+useradd -g test1 testgroup1
+修改组
+usermod -g test1 testgroup2
+
+
+/etc/passwd 文件：用户的配置文件，记录用户的各种信息
+/etc/shadow 文件：口令配置文件
+/etc/group 文件： 组配置文件记录linux包含的组信息
+
+## 指定运行级别
+0 关机
+1 单用户（找回丢失密码）
+2 多用户状态没有网络服务
+3 多用户有网络服务
+4 系统未使用保留给用户的
+5 图形界面
+6 系统重启
+常用3 和 5
+
+init 3 进入多用户有网络服务但无图形界面
+init 5 切换回图形界面
+init 0 关机
+
+systemctl get-default 查看默认运行级别
+systemctl set-default multi-user.target 修改默认级别为3
+systemctl set-default graphical.target 修改默认级别为5
+
+找回root密码
+使用单用户模式修改密码
+
+## 帮助指令
+man 获取帮助信息
+man ls
+help cd
+
+## 文件目录指令
+
+
+
+
+
+
+
+
 
 ## 根据端口号杀进程
 ```shell

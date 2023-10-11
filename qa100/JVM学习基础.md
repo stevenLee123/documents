@@ -5,7 +5,7 @@
 
 ## JVM 基础概念及调优
 ### 1. JVM组成
-> 类装载子系统 加载字节码文件放入方法区（元空间） （loading(加载) -> linking（链接） ->Intialization（初始化））
+> 类加载子系统 加载字节码文件放入方法区（元空间） （loading(加载) -> linking（链接） ->Intialization（初始化））
 > 运行时数据区（方法区、java堆、java栈（线程独享）、本地方法栈、程序计数器（线程独享））
 > 字节码执行引擎 执行字节码、写程序计数器、执行垃圾收集线程进行垃圾回收
 
@@ -15,7 +15,7 @@
 * 特点
   * 线程私有
   * 不会存在内存溢出
-* 每个线程都会分配一个程序计数器，存储线程当前执行的位置，当线程出现切换时，程序计数器用于记住当前先线程执行的地址，一旦指令执行，程序计数器将更新到下一条指令，另外在线程恢复执行时指示能当前线程之行的位置，程序计数器的值是由字节码执行引擎来修改的 保存当前线程执行指令的地址
+* 每个线程都会分配一个程序计数器，存储线程当前执行的位置，当线程出现切换时，程序计数器用于记住当前先线程执行的地址，一旦指令执行，程序计数器将更新到下一条指令，另外在线程恢复执行时指示当前线程执行的位置，程序计数器的值是由字节码执行引擎来修改的，用来保存当前线程执行指令的地址
 
 ### 2. java栈（先进后出）
 存放局部变量数据，分配给线程使用。一个方法对应一块栈帧内存空间
@@ -28,15 +28,17 @@
 栈大小设置(-Xss 2MB) linux 下默认是1024KB
 栈溢出
 > 出现没有出口的递归(栈帧过多)，抛出StackOverflowError
-> 方法的执行超出了栈的大小（栈帧过大)，抛出StackOverflowError
+> 方法的执行超出了栈的大小（栈帧过大），抛出StackOverflowError
 
 线程安全问题：
 方法内的局部变量如果没有出现逃逸的情况不会有线程安全的问题
 
-线程诊断与排查问题
-* 使用top命令定位哪个进程对CPU的占用过高
+**线程诊断与排查问题**
+* 使用top命令定位哪个进程对CPU的占用过高 
+* top -Hp pid 查看某个进程中的线程占用情况
 * ps H -eo pid,tid,%cpu|grep pid 进一步定位哪个线程引起cpu占用过高
 * 使用jstack pid 查看线程详情，根据线程id找到有问题的线程，（可能是死锁，可能是死循环等问题），定位到线程行数
+* 可以使用jstack检测进程中出现的死锁
 
 ### 本地方法栈（native method stacks）
 * 为本地方法执行提供内存空间
@@ -50,7 +52,7 @@
 存放类的元数据信息、运行时常量值、静态变量（可能存在对象，在方法中存放的也是变量的引用，真正的变量放在堆中）、字段和方法数据，以及方法和构造函数的代码，包括用于类和实例初始化及接口初始化的特殊方法
 * 运行时常量池 Stringtable，不在操作系统本地内存中，在堆（heap）中
 
-* 设置的元空间太小(jdk8，默认没有大小限制) -XX:MaxMetaspaceSize=100M - XX: -UseCompressedOops 抛出OutOfMemoryError:metaspace(jdk1.6是 PermGen space)
+* 设置的元空间大小(jdk8，默认没有大小限制) -XX:MaxMetaspaceSize=100M - XX: -UseCompressedOops 抛出OutOfMemoryError:metaspace(jdk1.6是 PermGen space)
 
 * 方法区溢出，OutOfMemoryError
 
@@ -106,7 +108,7 @@ s == "ab"
 s2 = s.intern();
 //StringTable中已经存在“ab”，返回true
 s2 == "ab"
-//StringTable中已经存在“ab”，返回true
+//s还在堆中，返回false
 s == "ab"
 ```
 * jdk7之前StringTable是放在永久代中，在jdk8中StringTable是放在堆中的，放在堆中是为了保证在垃圾回收时StringTable能及时被垃圾回收，而不需要在full GC时才被回收
@@ -115,7 +117,7 @@ s == "ab"
 
 * StringTable是可以被垃圾回收的
 * StringTable是类似于hashTable的实现
-* StringTable调优，调整HashTable的桶的个数， -XX:StringTableSize=20000 -XX:+PrintStringTableStatistics,当字符串数量太多时，可以将StringTable的痛个数调高点
+* StringTable调优，调整HashTable的桶的个数， -XX:StringTableSize=20000 -XX:+PrintStringTableStatistics,当字符串数量太多时，可以将StringTable的个数调高点
 * 将堆内存中的String对象放入到StringTable中避免大量的内存占用 （类似于设计模式中的享元模式）
 
 配置jvm打印垃圾回收的详情：
@@ -142,7 +144,7 @@ s == "ab"
   * 使用unsafe.allocateMemory(size)方法分配内存
   * 使用unsafe.freeMemory(address);回收内存（当ByteBuffer被垃圾回收收集时，出发unsafe.freeMemory(address)）
 
-显示的禁用GC - XX:DisableExplicitGC ，可以使System.gc()失效，这时由于不会显示出发jvm 的GC，可能导致直接内存的垃圾回收的失效，此时直接内存必须要等到jvm自动的垃圾回收才能回收
+显示的禁用GC - XX:DisableExplicitGC ，可以使System.gc()失效，这是由于不会显示出发jvm 的GC，可能导致直接内存的垃圾回收的失效，此时直接内存必须要等到jvm自动的垃圾回收才能回收
 如果禁用了显式的垃圾回收，可以使用直接使用unsafe来对直接内存进行垃圾回收
 
 
@@ -156,7 +158,7 @@ s == "ab"
 > eden 区，对象出生的区域
 > survivor 经过minior gc之后存活的类会从eden区移动到survivor区
 老年代 存放超过某一年龄代的对象，或是大对象直接分配到老年代
-设置最小堆 -Xms
+设置初始堆 -Xms
 设置最大堆 -Xmx
 堆内存溢出OutOfMemoryError
 > 死循环导致堆内存溢出
@@ -167,7 +169,40 @@ jps 查看java进程 `jps 【选项 】 [hostid]`
 jmap -heap pid 检测某一时刻的堆内存使用情况
 jmap -dump:format=b,live,file=test1.bin pid --抓取堆内存dump，抓取前进行垃圾回收，堆内存保存格式是二进制，保存文件名为test1.bin
 jconsole 图形化工具，查看堆内存占用，线程数量，类加载数量，cpu占用率
-jstat 统计jvm内存信息  `jstat 【选项】 【进程ID】 [间隔时间 ] [查询次数]`
+jstat 统计jvm内存信息  `jstat 【选项】 【进程ID】 [间隔时间 ] [查询次数]` jstat -gc -h3 2114 250 10
+-gc 参数的输出内容
+S0C    S1C    S0U    S1U      EC       EU        OC         OU       MC     MU    CCSC   CCSU   YGC     YGCT    FGC    FGCT     GCT
+512.0  512.0  256.0   0.0   50688.0  12184.0   529920.0   476480.1  170240.0 163104.4 16896.0 15220.7   1978   19.427  31     18.441   37.868
+512.0  512.0  256.0   0.0   50688.0  12184.0   529920.0   476480.1  170240.0 163104.4 16896.0 15220.7   1978   19.427  31     18.441   37.868
+512.0  512.0  256.0   0.0   50688.0  12184.0   529920.0   476480.1  170240.0 163104.4 16896.0 15220.7   1978   19.427  31     18.441   37.868
+ S0C    S1C    S0U    S1U      EC       EU        OC         OU       MC     MU    CCSC   CCSU   YGC     YGCT    FGC    FGCT     GCT
+512.0  512.0  256.0   0.0   50688.0  12184.0   529920.0   476480.1  170240.0 163104.4 16896.0 15220.7   1978   19.427  31     18.441   37.868
+512.0  512.0  256.0   0.0   50688.0  12184.0   529920.0   476480.1  170240.0 163104.4 16896.0 15220.7   1978   19.427  31     18.441   37.868
+512.0  512.0  256.0   0.0   50688.0  12184.0   529920.0   476480.1  170240.0 163104.4 16896.0 15220.7   1978   19.427  31     18.441   37.868
+ S0C    S1C    S0U    S1U      EC       EU        OC         OU       MC     MU    CCSC   CCSU   YGC     YGCT    FGC    FGCT     GCT
+512.0  512.0  256.0   0.0   50688.0  12184.0   529920.0   476480.1  170240.0 163104.4 16896.0 15220.7   1978   19.427  31     18.441   37.868
+512.0  512.0  256.0   0.0   50688.0  12184.0   529920.0   476480.1  170240.0 163104.4 16896.0 15220.7   1978   19.427  31     18.441   37.868
+512.0  512.0  256.0   0.0   50688.0  12184.0   529920.0   476480.1  170240.0 163104.4 16896.0 15220.7   1978   19.427  31     18.441   37.868
+ S0C    S1C    S0U    S1U      EC       EU        OC         OU       MC     MU    CCSC   CCSU   YGC     YGCT    FGC    FGCT     GCT
+512.0  512.0  256.0   0.0   50688.0  12184.0   529920.0   476480.1  170240.0 163104.4 16896.0 15220.7   1978   19.427  31     18.441   37.868
+ S0C: 当前幸存者区0的容量 (kB).
+ S1C: 当前幸存者区1的容量(kB).
+ S0U: 幸存者区0已用内存 (kB).
+ S1U: 幸存者区1已用内存 (kB).
+ EC: 伊甸园区容量 (kB).
+ EU: 伊甸园区已用内存 (kB).
+ OC: 当前老旧区容量 (kB).
+ OU: 老旧区已用内存 (kB).
+ MC: 元数据区容量 (kB).
+ MU: 元数据区已用内存 (kB).
+ CCSC: 类压缩区容量 (kB).
+ CCSU: 类压缩区已用内存 (kB).
+ YGC: 新生垃圾回收事件数量.
+ YGCT: 新生垃圾回收时间.
+ FGC: 垃圾回收事件总和.
+ FGCT: 完整的一次垃圾回收时间.
+ GCT: 所有的垃圾回收时间.
+
 jinfo JVM参数查看和修改 `jinfo 【选项】【具体选项参数名】【进程ID】`
 jstack JVM线程信息监控 `jstack [ 选项 ] [进程ID]远程IP`
 
@@ -282,7 +317,7 @@ public class TestDemo1 {
 | -Xmn                                                       | 新生代大小                                |
 | -XX:InitialSurvivorRatio=ratio  -XX:+UseAdaptiveSizePolicy | eden、from、to大小比例                    |
 | -XX:SurvivorRatio                                          | 幸存区比例,默认8，指的是eden的占比，8:1:1 |
-| -XX:MaxTenuringThreshold=threshold                         | 晋升阈值                                  |
+| -XX:MaxTenuringThreshold=threshold                         | 晋升老年代阈值                            |
 | -XX:+PrintTenuringDistribution                             | 打印晋升详情                              |
 | -XX:PrintGCDetails -verbose:gc                             | gc详情                                    |
 | -XX:+ScavengeBeforeFullGC                                  | FullGC 前minor GC                         |
@@ -294,7 +329,7 @@ public class TestDemo1 {
 > 2. 当eden区的空间无法再分配内存给新的对象时，触发一次minior GC，通过可达性分析判断eden区的对象是否被引用，如果不被引用，则直接回收，如果被引用，放入survivor区，对象的分代年龄加1，eden区再次分配空间给新的对象
 > 3. 当eden区再次无法分配内存给新的对象，再次触发minior GC，通过可达性分析判断eden区和已经分配了对象的一个survivor区的可回收对象，对非垃圾对象的分代年龄再次加1，放入到另一个空闲的survivor区
 > 4. 当内存不足时重复步骤3
-> 5. 当某次minior gc 回收垃圾后空闲的survivor无法存放下存活的对象，则需要进行senior GC ，将对象放入老年代
+> 5. 当某次minior gc 回收垃圾后空闲的survivor无法存放下存活的对象，则需要进行Major GC（Major GC的效率比minior GC慢很多） ，将对象放入老年代
 > 6. 动态年龄判断：当某次minior GC之后，存活对象的总大小大于一块survivor 区域大小的50%，则直接将这次minior GC存活下来的对象直接放入老年代中
 分代GC的理论基础：大多数的对象都是朝生夕死
 > 7. 当老年代无法存放更多的对象时，会进行一次full gc
@@ -303,12 +338,14 @@ public class TestDemo1 {
 ### 16.垃圾收集器
 分类：
 * 串行：单线程、适合堆内存小的场景
-* 吞吐量优先：多线程，适合堆内存较大的场景，需要多核心cpu支持，让单位时间内stop the world的时间最短
-* 响应时间优先：多线程，适合堆内存较大的场景，需要多核心cpu支持，尽可能降低单次垃圾回收暂停时间（stop the world）
+* 吞吐量优先：多线程，适合堆内存较大的场景，需要多核心cpu支持，让单位时间内stop the world的时间最短（并行收集，暂停用户线程，开启多个垃圾回收线程）
+  吞吐量计算： 用户线程执行时间/（用户线程执行时间+ 垃圾回收线程执行时间）
+* 响应时间优先：多线程，适合堆内存较大的场景，需要多核心cpu支持，尽可能降低单次垃圾回收暂停时间（stop the world）（并发收集，做到最小的用户线程暂停时间）
 
 #### 串行垃圾回收器
 开启： -XX:UseSerialGC = Serial(复制算法) + SerialOld（标记整理算法）
 单线程回收，当垃圾回收线程执行时，要求用户线程阻塞
+适用于单核CPU的情况
 
 #### 吞吐量优先的垃圾回收器
 * 并行垃圾回收器
@@ -321,7 +358,8 @@ public class TestDemo1 {
 
 #### 响应时间优先垃圾回收器
 * 并发的垃圾回收器，垃圾回收时用户线程允许与垃圾回收线程并发运行
-* 开启： -XX:+UseConcMarkSweepGC（标记清除） +XX:+UseParNewGC（新生代、复制算法）/+UseSerialOld
+* +XX:UseParNewGC（新生代、并行、复制算法）  -XX:+UseConcMarkSweepGC（标记清除，老年代）
+* 开启： -XX:+UseConcMarkSweepGC（标记清除，老年代） +XX:+UseParNewGC（新生代、并行、复制算法）/+UseSerialOld
 * 其他配置
   * -XX:ParallelGCTHreads=n(并行垃圾回收线程数) -XX:ConcGCThreads=threads（并发垃圾回收线程数，一般设置为并行线程数的1/4）
   * -XX:CMSintialingOccupancyFraction=percent（80），例如老年代的使用百分比达到80%时进行垃圾回收 执行cms垃圾回收的内存占比，主要是为了避免在并发清理过程中产生的新的垃圾导致的内存溢出问题
@@ -383,7 +421,7 @@ public class TestDemo1 {
 **windows下查看虚拟机运行参数 -XX:PrintFlagsFinal -version|findstr GC**
 
 #### 关于full gc的说明
-* SerialGC、parallel GC、CMS、GC 新生代不足发生的垃圾收集叫minor gc
+* SerialGC、parallel GC、CMS GC 新生代不足发生的垃圾收集叫minor gc
 * SerialGC、parallel GC 老年代内存不足发生的垃圾回收称为full gc
 * CMS、G1 老年代垃圾回收不足，由于存在并发垃圾收集，当垃圾产生速度小于垃圾收集速度，暂停时间较短，不能称为fullGC，当垃圾产生速度大于收集速度，会退化为SerialOld，会出现full GC
 
@@ -539,7 +577,7 @@ public class TestTryCatch2 {
   * 验证：验证类是否符合jvm规范，安全性检查
   * 准备：为static变量分配空间，设置默认值（与class对象存储在一起，存储在堆中），static变量是在初始化阶段进行赋值，而static final变量的基本类型（不是通过new方式进行创建）即常量会在准备进行赋值
  ```java
-static int a = 10;//准备节点仅分配空间
+static int a = 10;//准备阶段仅分配空间
 final static int b = 20; //准备阶段分配空间并赋值
 static final Object o = new Object() //准备阶段分配空间不进行赋值
 ```
@@ -625,7 +663,7 @@ Thread.currentThread().getContextClassLoader()
 
 **自定义类加载器**
 使用场景：
-* 想加载人意路径下的类文件
+* 想加载自定义路径下的类文件
 * 通过接口实现软件解耦
 * 希望对类进行隔离，避免同名同包的类的冲突（tomcat中有使用）
 
@@ -713,7 +751,7 @@ public class ThreadWhile {
 volatile static boolean flag = true;
 ```
 volatile无法保证原子性，只适用于一个线程写，多个线程读
-2. 在循环体中使用打印,System.out.println使用了synchronized
+2. 在循环体中使用打印,System.out.println使用了synchronized,这里会让线程重新拿到更新后的flag
 ```java
   static boolean flag = true;
     public static void main(String[] args) throws InterruptedException {
@@ -728,7 +766,7 @@ volatile无法保证原子性，只适用于一个线程写，多个线程读
     }
 ```
 **有序性**
-下面的代码由于jit即时编译可能导致指令重拍
+下面的代码由于jit即时编译可能导致指令重排
 
 ```java
 public class CodeSort {
@@ -771,7 +809,7 @@ class Result{
 3  dup    //复制栈顶
 4  invkespecial #3  执行invokespecial
 7  putstatic   #4 对静态变量instance进行赋值
-4和7可能出现指令重排，可能将instance首先分配了空间，引用不为空，则某个线程正在执行构造方法（invokespecial），而另一个线程可能已经将instance进行了返回
+4和7可能出现指令重排，可能将instance首先分配了空间，引用不为空，则某个线程正在执行构造方法（invokespecial），而另一个线程可能已经将instance进行了返回，这样其他线程拿到的就是未完全实例化只是分配了空间的instance
 
 ```java
 volatile boolean ready = false;
@@ -799,6 +837,22 @@ public class Singleton5 {
 ```
 
 **happends-before**
+"Happens before"原则是并发计算中的一个概念，用于描述事件之间的顺序关系。它是指在多线程或多进程的计算环境中，如果事件 A 在时间上先于事件 B 发生，那么事件 A 就被认为是在事件 B 之前发生的。
+happends before 是一种内存可见性模型
+多线程下由于指令重排序导致数据可见性的问题
+A线程修改共享变量的值可能对B线程不可见
+JMM通过happends beofore提供了一个跨越线程的可见性的保障，如果操作A在时间上必然先于B发生，则A就认为在B之前发生
+happends before不表示指令执行的先后顺序，只要对最终的结果没有影响，jvm是允许指令重排序的
+
+规定对共享变量的写操作对其他线程读操作可见，是可见性与有序性的一套规则
+
+* 线程解锁m之前对变量的写，对于接下来对m加锁的其他线程对变量的读可见
+* 线程对volatile变量的写对接下来其他线程对变量的读可见
+* 线程start之前对变量的写对该线程开始后对该变量的读可见
+* 线程结束前对变量的写对其他线程得知它结束之后的读可见
+* 线程1打断（interrupt）线程2前对变量的写对于其他线程得知线程2被打断后的变量的读可见
+* 对变量默认值的写对其他线线程对该变量的读可见
+* 传递性，volatile变量写入，写屏障会将写屏障之间的所有操作都同步到主存（即使写屏障之前的某个变量不是volatile变量）
 
 **CAS与原子类**
 * 乐观锁
@@ -1000,7 +1054,7 @@ GC roots根节点：
 > 此时会进入用户线程停止阶段，收集器切换到serial old垃圾收集器来回收垃圾
 
 ### 35.三色标记算法
-黑色：垃圾收集器访问过的对象，它是安全存活的，如果有其他对象引用只想了黑色对象，无需重新扫描一遍.黑色对象不可能直接指向某个白色对象
+黑色：垃圾收集器访问过的对象，它是安全存活的，如果有其他对象引用指向了黑色对象，无需重新扫描一遍.黑色对象不可能直接指向某个白色对象
 灰色：表示对象已经被垃圾收集器访问，但这个对象上至少还有一个引用没有被扫描过
 白色: 对象尚未被垃圾收集器访问过，可达性分析刚开始剪短，所有对象都是白色对象
 
@@ -1019,7 +1073,7 @@ G1收集器后台维护一个有限列表，根据允许的收集时间，优先
 使用jvm自带的jmap，jconsole、jstack等工具来排查
 可以使用redis等缓存工具将jvm的缓存移动到redis数据库中
 
-### 39。GC是什么时候做的
+### 39. GC是什么时候做的
 GC是需要代码运行到安全点或安全区域才能做
 安全点指代码中的特定位置，线程运行到这些位置时他的状态是确定的，有以下几种安全点：
 1. 方法执行返回之前
@@ -1078,3 +1132,103 @@ MBean之间的通信是必不可少的，Notification起到了在MBean之间沟�
     }
 
 ```
+
+#### 排查 JVM 内存溢出问题通常需要一系列的步骤和工具，以下是一个示例：
+
+错误信息和日志分析：
+
+首先，查看应用程序的错误信息和日志。通常，JVM 内存溢出问题会导致 OutOfMemoryError 异常。查看异常堆栈跟踪以确定问题的源头。
+内存快照：
+
+使用 JVM 提供的工具（如 jmap）获取应用程序的堆内存快照。这将显示哪些对象正在占用大量内存。
+例如，可以运行以下命令获取堆内存快照：jmap -dump:format=b,file=heapdump.hprof <PID>。
+内存分析工具：
+
+使用内存分析工具（如 Eclipse Memory Analyzer 或 VisualVM）来分析堆内存快照文件。这些工具能够可视化显示哪些对象占用了大量内存，帮助你找到潜在的内存泄漏或过度使用内存的地方。
+代码审查：
+
+仔细审查应用程序的代码，特别是涉及内存管理的部分。查找可能导致内存泄漏或不必要的内存分配的代码。
+确保你的代码在使用完对象后进行正确的资源释放，特别是在使用类似于文件流或数据库连接等资源时。
+GC 日志分析：
+
+启用 JVM 的垃圾回收日志（GC 日志），并分析它们以了解垃圾回收活动。GC 日志可以告诉你内存使用的趋势以及垃圾回收是否在工作。
+你可以使用 JVM 参数来启用 GC 日志，例如 -XX:+PrintGCDetails 和 -XX:+PrintGCDateStamps。
+堆大小和GC 参数调整：
+
+根据你的应用程序的内存需求，可能需要调整堆大小和垃圾回收参数。过小的堆或不合适的 GC 配置都可能导致内存溢出问题。
+使用内存分析工具进行实时监控：
+
+一些工具允许你实时监控应用程序的内存（jstat）使用情况。这对于发现内存泄漏或内存使用异常的情况
+
+#### 在实际中，可以遇到以下一些排查JVM内存溢出问题的情况：
+
+OutOfMemoryError: Java heap space：这是最常见的JVM内存溢出错误，表示Java堆空间不足。可以通过查看堆转储文件（heap dump）来了解哪些对象占用了大量的内存并进行分析。
+
+OutOfMemoryError: PermGen space（Java 7之前）或 OutOfMemoryError: Metaspace（Java 8及更高版本）：这表示永久代或元空间不足。可以通过调整永久代（或元空间）的大小或增加它们的上限来解决。有可能由于反射或cglib机制的滥用导致了大量class信息存储于方法区，需要重点排查这方面的代码。调整jvm参数配置，-XX:MaxPermSize=256m，将元空间的大小设置更大
+
+OutOfMemoryError: unable to create new native thread：这表示无法创建新的本地线程。可以通过减少线程的创建数量，或者增加操作系统线程的限制，如ulimit（Linux）来解决。
+
+OutOfMemoryError: request bytes for . OutOfMemoryError: unable to create new native thread：这表示JVM试图为Java堆或线程堆栈分配更多的内存，但操作系统中的可用内存不足。可以通过增加操作系统的可用内存来解决。
+
+OutOfMemoryError: GC overhead limit exceeded：这表示垃圾收集器花费了过多的时间来回收垃圾，但仍然无法释放足够的内存。可以通过调整垃圾收集器参数或增加堆内存来解决。
+
+在排查这些问题时，可以使用各种工具和技术，例如使用jmap将内存快照dump下来，然后用堆转储文件分析工具（如MAT），JVM监控工具（如VisualVM），日志分析和代码审查等。
+
+
+
+#### JVM内存溢出是否会导致JVM退出
+在线程OOM发生时，java进程不一定会立即退出
+在java中线程的异常都是有线程自身来处理，每个java线程都会有一个默认的异常处理器，通过这个异常处理器来处理线程异常
+private void dispatchUncaughtException(Throwable e) {
+   getUncaughtExceptionHandler().uncaughtException(this, e);
+}
+而jvm退出的条件是：jvm虚拟机中不存在非守护线程。
+线程发生未处理异常会导致线程结束，而与jvm的退出毫无关系
+OOM与JVM退出
+OOM的发生表示了此刻JVM堆内存告罄，不能分配出更多的资源，或者gc回收效率不可观。一个线程的OOM，在一定程度的并发下，若此时其他线程也需要申请堆内存，那么其他线程也会因为申请不到内存而OOM，甚至连锁反应导致整个JVM的退出。
+
+一般情况下，出现OOM异常，JVM的GC会进行回收，是不会导致JVM进程退出的。要真说唯一导致退出的情况，那就是内存泄漏，由于内存占用越来越大，导致垃圾回收失败，导致申请不到内存从而导致线程异常退出，最终导致jvm退出
+不过这种JVM的OOM导致的异常，很好排查。
+
+### 当jdk出现OOM时的排查
+当java进程已经退出时：
+* 启动时在jvm启动参数中添加OOM的dump打印信息，当jvm进程退出时，内存溢出可以快速定位到内存溢出的问题
+ -XX:+HeapDumOnOutOfMemoryError -XX:HeapDumpPath=heap.hprof
+* 结合jvisualvm，载入dump的文件查看相信的类的信息
+
+java进程退出的情况
+* 使用jmap -dump:format=b,live,file=test1.bin pid 临时将当前的堆内存占用情况打印出来
+* 使用 jmap histo:live pid  查看当前所有类的实例情况
+* 解决jvisualvm加载dump文件进行调试判断
+
+
+#### JVM退出的条件包括
+JVM（Java虚拟机）进程退出的条件通常包括以下几种情况：
+
+应用程序执行完成：当Java应用程序的main方法或主要执行线程完成其工作后，JVM会正常退出。这是正常情况下的退出方式。
+
+显式调用System.exit()：如果应用程序调用System.exit()方法，JVM将立即退出，无论应用程序是否已完成其主要工作。
+
+未捕获的异常：如果应用程序抛出了未捕获的异常，且该异常没有被捕获和处理，JVM将以异常的错误代码退出。例如，NullPointerException、ArrayIndexOutOfBoundsException等未捕获的异常可能会导致JVM退出。
+
+内存溢出：当JVM遇到内存溢出（OutOfMemoryError）情况时，通常会导致JVM进程退出。这包括堆内存溢出、方法区溢出、栈溢出等。
+
+用户中断：在一些操作系统中，用户可以使用CTRL+C等键盘快捷键来中断正在运行的Java进程，这将导致JVM退出。
+
+操作系统信号：操作系统可以向JVM发送信号，强制其退出。例如，Unix/Linux系统上的kill命令可以发送信号来终止Java进程。
+
+资源耗尽：如果操作系统在JVM运行期间耗尽了系统资源（如文件描述符、内存、线程等），JVM可能会因无法获得足够的资源而退出。
+
+调用Runtime.getRuntime().halt()：与System.exit()不同，Runtime.getRuntime().halt(int status)方法会导致JVM立即退出，而不会执行清理操作。这是一种比较粗暴的退出方式，不建议常用。
+
+总之，JVM进程会在上述情况下退出。对于正常的应用程序退出，通常是应用程序完成其主要任务后自行退出。而对于异常情况，JVM会记录相关信息，并在退出前尽量释放资源和执行清理工作，以确保应用程序的稳定性。在开发和部署应用程序时，需要注意处理异常情况，以避免不必要的JVM退出。
+
+### 什么是Full GC，什么情况下会产生Full GC
+Full GC是一次特殊的GC，这次GC会回收整个队内存，包括老年代、新生代、metaspace等
+在Full GC的过程中所有的用户线程处于暂停状态
+什么情况下会产生full gc
+* 调用System.gc()建议虚拟机执行FullGC，虚拟机不一定会真的执行
+* 未指定老年代和新生代大小，堆的伸缩会产生full gc，一定要配置-Xmx、-Xms
+* 老年代空间不足会触发full GC
+* 空间分配担保失败，可能对象晋升的平均大小 > 老年代剩余空间，也可能是minor GC后的晋升的对象大小超过了老年代剩余的空间
+

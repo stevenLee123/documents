@@ -3,7 +3,7 @@
 > hadoop： 用于分布式存储和map-reduce计算
 * yarn负责资源和任务管理
 * hdfs负责分布式存储,重点是数据访问的高吞吐量而不是数据访问的低延迟
-* map-reduce负责分布式计算，程序变写比较麻烦
+* map-reduce负责分布式计算，程序编写比较麻烦
 * hbase 一个在hdfs上开发的面向列的分布式NoSql数据库，不支持sql，使用zk提供稳定服务和failover机制，属于结构化存储层
 * hive实现在hadoop上进行结构化处理的组件，存储结构化信息，可以实现将sql转华为mapreduce，将执行结果进行加工返回给用户，高延迟，结构化，面向分析，用作数据仓库
 * hive的sql的灵活性不如直接使用mapreduce
