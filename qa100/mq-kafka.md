@@ -11,6 +11,12 @@
 * 流量削峰，避免过高的并发导致的系统瘫痪
 * 日志处理（大数据领域常见，将消息队列作为临时存储或通信管道）
 
+kafka的特性：
+可靠性：分布式的、可分区的、数据可备份的、高容错的
+可扩展性：在无需停机的情况下实现轻松扩展
+消息持久性：kafka支持将消息持久化道本地磁盘
+高性能：发布订阅具有很高的吞吐两，存储TB级别的消息数据依然能保持稳定的性能
+
 ## 生产者消费者模型
 producer负责将消息放入队列
 consumer负责将消息取出进行处理
@@ -29,7 +35,7 @@ producer和comsumer使用java实现
 * 为了消费消息，订阅者需要提前订阅该角色主题，保持在线运行
 * 提供对消费者进行分组的功能，同一组的消费者并行消费，消费者消费不同的分区
 * 对消息数据进行分区，并提供多个分区备份，一个分区只能由一个消费者进行消费
-实际应用中多用的是发布订阅模式
+**实际应用中多用的是发布订阅模式**
 
 ## kafka集群部署
 集群配置
@@ -69,7 +75,18 @@ dataDir=/Users/lijie3/Documents/data/kafka/zookeeper-data
 #zookeeper端口号
 clientPort=2181
 ```
+## 启动kafka
+先启动zk
+```shell
+./bin/zookeeper-server-start.sh config/zookeeper.properties 
+```
+然后再启动kafka进程
+```shell
+./bin/kafka-server-start.sh config/server.properties
+```
 *停止kafka时先关闭kafka进程，再关闭zookeeper*
+
+
 
 
 
@@ -166,25 +183,25 @@ hello world
 ## kafka概念
 * zookeeper集群：保存kafka相关元数据，管理协调kafka集群
 * broker：由多个broker组成，无状态，通过zk来维护集群状态
-* producer：
-* consumer：
+* producer：生产者
+* consumer：消费者
 * consumer group: 可扩展且具有容错性的消费者机制，一个消费者组具有唯一的id group.id
 * partition： 一个topic对应多个分区，将分区分布在不同的服务器上
-* replicas：分区的副本，分副本也是放在不同的服务器上，用来容错
+* replicas：分区的副本，分区副本也是放在不同的服务器上，用来容错
 * topic： 主题是一个逻辑概念，用于生产者发布数据，消费者拉取数据，一个主题中的消息是有结构的，一般一个主题包含一类消息，一旦一个消息发送到主题中，这些消息不能被更新
 * offset：偏移量，记录下一跳将要发送给comsumer的消息的序号，默认kafka将offset存储在zk中，在一个分区中，消息是有顺序存储着，每个分区的消费都是有一个递增的id，这就是偏移量offset，偏移量在分区中有意义，在分区之间没有意义
 
 ## 消费者组
 * 一个消费者组中能包含多个消费者，共同消费topic中的数据
 * 一个topic中如果只有一个分区，那么这个分区只能被消费者组中的一个消费者消费
-* 有多少个分区，嘛么久可以被同一个组内的多少个消费者消费
+* 有多少个分区，那么可以被同一个组内的多少个消费者消费
 
 ## kafka幂等性（解决生产者消息重复性问题）
 > http请求中，一次请求或多次请求拿到的响应是一致的
 > 执行多次操作与执行一次操作的影响时一样的
 > 如果kafka生产者在提交数据到broker后数据写入分区中，而broker响应给producer的ack应答失败，这时，producer会再次尝试发送相同的消息到broker，直到收到正常的ACK应答，而broker能保证producer retry的多条数据只有一条写入分区中
 
-开启kafka的幂等性： 发送消息时，会连着pid(生产者唯一编号)和squence number一起发送，kafka接受到消息，会将消息和pid、sequence number一起保存下来，当生产者发送过来的sequence number小于等于partition消息中的sequence number，kafka会忽略到这条消息
+开启kafka的幂等性： 发送消息时，会连着pid(生产者唯一编号)和squence number一起发送，kafka接受到消息，会将消息和pid、sequence number一起保存下来，当生产者发送过来的sequence number小于等于partition消息中的sequence number，kafka会忽略这条消息
 ```java
  prop.put("enable.idempotence",true);
 ```
@@ -360,7 +377,7 @@ ack = -1 情况下，可能出现数据重复问题：
 * 最多一次 at most once： ack级别设置为0 ---可能丢数据
 * 精确一次 exactly once ： 幂等性 + 至少一次
 
-重复判断标准：具有`<PID,Partition,SeqNumber>`相同主键的消息提交时，broker只会持久化一条数据，其中PID时kafka每次重启时分配的pid，Partition是分区号，SeqNumber 是单调自增的标志
+重复判断标准：具有`<PID,Partition,SeqNumber>`相同主键的消息提交时，broker只会持久化一条数据，其中PID是kafka每次重启时分配的pid，Partition是分区号，SeqNumber 是单调自增的标志
 幂等性只能保证一个会话单分区内不重复
 幂等性的开启
 ```java
@@ -436,7 +453,7 @@ Kafka生产者消息重复问题通常是由于多种原因引起的，下面是
 
 生产者默认每个broker最多缓存5个请求，由于可能存在数据1，2，4发送成功，而数据3发送失败需要进行重试，会导致数据乱序
 kafka 1.x版本之前，将max.in.flight.requests.per.connection=1，保证缓存请求最多是一个，不会出现乱序
-之后的版本，如果开启了幂等性，max.in.flight.requests.per.connection需要设置为小于等于5，可以保证不回乱序
+之后的版本，如果开启了幂等性，max.in.flight.requests.per.connection需要设置为小于等于5，可以保证不会乱序
 当出现上面的数据发送重试时，在kafka集群中会在持久化数据前根据幂等性条件`<PID,Partition,SeqNumber>`判断前面是否有数据未接收，如果有，则等待缺失数据到达再进行排序后持久化
 
 ## kafka broker 服务器

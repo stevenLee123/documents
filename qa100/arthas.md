@@ -18,6 +18,7 @@ arthas-client connect 172.16.1.133 3658
 常用命令：
 ## dashboard 仪表板
 
+
 ## thread 查看线程信息
 
 ## jad demo.MathGame 查看反编译后的代码
@@ -69,6 +70,11 @@ arthas-client connect 172.16.1.133 3658
 
  ## dashboard 仪表板
  显示线程，内存，gc，系统环境等信息
+ * 如果出现线程占用cpu过高，可以用threa tid来查看线程堆栈信息
+ * 查看内存占用情况，查看使用的垃圾回收器，查看垃圾回收时间和垃圾回收次数
+ * 查看当前系统配置及环境配置信息
+ 
+
 
  ## thread 线程相关
  thread -n 5 显示最繁忙的5个线程
@@ -79,7 +85,7 @@ thread --state WAITING 查看某一状态的线程
  ## jvm 虚拟机相关信息
 
  ## sysprop 显示与修改系统属性相关信息
- sysprop java.home 显示jav.home
+ sysprop java.home 显示java.home
  sysprop test.java aaaa 设置系统属性
 
 ## sysenv 查看当前jvm的环境属性
@@ -236,7 +242,8 @@ stack demo.MathGame primeFactors 追踪primeFactors的调用路径
 stack demo.MathGame primeFactors 'params[0] < 0' -n 2 追踪两次第一个入参小于0的情况
 stack demo.MathGame primeFactors '#cost > 0.5' -n 2 追踪耗时大于0.5ms的情况两次
 
-## tt （time-tunel） 记录指定方法每次调用的入参和返回值信息
+## tt （time-tunel） 记录指定方法每次调用的入参和返回值信息，
+就是记录下当前方法的每次调用环境现场
 tt -t demo.MathGame primeFactors 记录某个方法在一个时间段中的调用
 tt -l 显示所有已经记录的列表
 tt -n 记录多少次
@@ -249,6 +256,9 @@ tt --delete-all  清除方法调用的所有记录
 ## options 全局开关
 options unsafe true 对系统级别的类进行增强，可能导致JVM挂掉
 options dump true 是否将增强的类保存到外部文件
+
+## heapdump 堆转储
+类似于 jmap -dump命令
 
 ## profiler 火焰图
 profiler start 启动火焰图
@@ -263,6 +273,16 @@ x轴表示抽样数量
 火焰图就是看顶层哪个函数占用宽度最大，存在平顶时表示该函数可能存在性能问题
 
 
+### 使用arthas排查jvm内存溢出问题
+1. 首先使用dashboard命令查看系统的堆内存占用情况
+2. 使用heapdump将系统中内存快照dump下来
+3. 或使用classloader 查看系统中类加载器加载类的情况
+4. 使用sc -d 查看类加载的详细信息
+
+### 使用arthas排查线上服务器cpu占用过高问题
+1. 使用dashboard 查看占用cpu时间多的线程
+2. 或是使用thread -n 5 查看占用cpu时间最高的几个线程
+3. 观察线程堆信息，使用jad com.steven.jvm.TestMemLeak main 反编译具体的方法，查看方法中的代码逻辑是否存在死循环或是方法是否存在被循环调用的情况
 
 
 

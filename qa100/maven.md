@@ -3,6 +3,8 @@
 ## 下载源码包命令
 mvn dependency:sources
 mvn dependency:resolve -Dclassifier=javadoc
+## 下载源码
+mvn dependency:resolve -Dclassifier=sources
 
 ## 执行打包
 mvn clean package -Dmaven.test.skip=true

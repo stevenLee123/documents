@@ -4,10 +4,49 @@
 ![学习路线](./image/jvm%E5%AD%A6%E4%B9%A0%E8%B7%AF%E7%BA%BF.png)
 
 ## JVM 基础概念及调优
-### 1. JVM组成
+## 1. JVM组成
 > 类加载子系统 加载字节码文件放入方法区（元空间） （loading(加载) -> linking（链接） ->Intialization（初始化））
 > 运行时数据区（方法区、java堆、java栈（线程独享）、本地方法栈、程序计数器（线程独享））
 > 字节码执行引擎 执行字节码、写程序计数器、执行垃圾收集线程进行垃圾回收
+
+## java类加载机制
+java类加载机制就是将java类字节码加载到内存中，并转化为运行时数据结构，主要涉及到三个步骤：加载、连接、初始化
+类加载阶段：
+* 加载loading： 查找字节码文件，将其载入到内存中，这一阶段就是将.class文件字节流加载到jvm中
+
+* 连接（包含以下三个步骤）：
+  验证verification：对字节码进行验证，确保其符合jvm规范，不会威胁jvm
+  准备preparation：这个阶段为jvm的类的静态变量分配内存空间，为其初始化默认值
+  解析Resolution: 将符号引用替换为直接引用的过程
+  *符号引用就是一个类中（当然不仅是类，还包括类的其他部分，比如方法，字段等），引入了其他的类，可是JVM并不知道引入的其他类在哪里，所以就用唯一符号来代替，等到类加载器去解析的时候，就把符号引用换成那个引用类的地址，这个地址也就是直接引用*
+
+* 初始化Initialization：对类的静态变量进行初始化赋值，执行静态代码块。类被真正使用之前的最后一道屏障
+
+类加载器的种类：
+* 引导类加载器，负责加载支持JVM运行的位于JRE的lib目录下的核心类库，比如rt.jar,charsets.jar等
+* 扩展类加载器：负责加载支撑JVM运行的位于jre的lib目录下的ext扩展目录中的jar包
+* 应用程序类加载器：负责加载ClassPath路径下的类包，主要是加载自己编写的应用程序类
+* 自定义加载器：负责加载用户自定义路径下的类包
+
+双亲委派模式:
+当一个类加载器收到加载类的请求时，优先将这个请求委派给父类加载器处理，当父类加载器无法处理时子类加载器才会去尝试加载类，这种模型保证类的一致性，避免类的重复加载
+
+双亲委派模式的破坏：
+破坏双亲委派模式，以提供动态更新某个类的能力
+
+类加载机制与OOP设计原则
+类加载机制与面向对象设计原则中的开闭原则（对扩展开放，对修改关闭）有着紧密的联系。通过合理利用类加载机制，我们可以使系统更容易扩展，遵循OOP设计原则，降低系统的耦合度。
+
+类加载机制的安全性考虑
+由于类加载机制直接涉及字节码的加载和执行，因此在设计和使用自定义类加载器时，需要特别注意安全性问题
+防止恶意代码注入、确保类加载的一致性和合法性是保障系统安全性的重要环节
+
+Java模块化与类加载机制
+随着Java 9的推出，引入了模块化系统，这对类加载机制带来了一些新的变化。模块化系统通过模块路径（Module Path）的概念，更好地隔离了不同模块的类。这对于大型项目的架构和维护带来了便利。
+
+
+
+## jvm运行时数据区
 
 ### 2. 程序计数器
 * java的二进制字节码（即JVM指令，所有平台都是一致的）无法被操作系统直接执行，需要经过java的解释器解释成机器码，然后才能由CPU执行
@@ -33,12 +72,7 @@
 线程安全问题：
 方法内的局部变量如果没有出现逃逸的情况不会有线程安全的问题
 
-**线程诊断与排查问题**
-* 使用top命令定位哪个进程对CPU的占用过高 
-* top -Hp pid 查看某个进程中的线程占用情况
-* ps H -eo pid,tid,%cpu|grep pid 进一步定位哪个线程引起cpu占用过高
-* 使用jstack pid 查看线程详情，根据线程id找到有问题的线程，（可能是死锁，可能是死循环等问题），定位到线程行数
-* 可以使用jstack检测进程中出现的死锁
+
 
 ### 本地方法栈（native method stacks）
 * 为本地方法执行提供内存空间
@@ -53,7 +87,7 @@
 * 运行时常量池 Stringtable，不在操作系统本地内存中，在堆（heap）中
 
 * 设置的元空间大小(jdk8，默认没有大小限制) -XX:MaxMetaspaceSize=100M - XX: -UseCompressedOops 抛出OutOfMemoryError:metaspace(jdk1.6是 PermGen space)
-
+* 原空间默认使用的是本地内存
 * 方法区溢出，OutOfMemoryError
 
 **chatgpt的方法区的回答：**
@@ -358,7 +392,7 @@ public class TestDemo1 {
 
 #### 响应时间优先垃圾回收器
 * 并发的垃圾回收器，垃圾回收时用户线程允许与垃圾回收线程并发运行
-* +XX:UseParNewGC（新生代、并行、复制算法）  -XX:+UseConcMarkSweepGC（标记清除，老年代）
+* -XX:UseParNewGC（新生代、并行、复制算法）  -XX:+UseConcMarkSweepGC（标记清除，老年代）
 * 开启： -XX:+UseConcMarkSweepGC（标记清除，老年代） +XX:+UseParNewGC（新生代、并行、复制算法）/+UseSerialOld
 * 其他配置
   * -XX:ParallelGCTHreads=n(并行垃圾回收线程数) -XX:ConcGCThreads=threads（并发垃圾回收线程数，一般设置为并行线程数的1/4）
@@ -559,7 +593,7 @@ public class TestTryCatch2 {
 使用monitorenter、monitorexit进行加锁解锁
 
 ### 编译期处理
-* 默认构造起：当无构造器时，使用的是super的构造方法
+* 默认构造器：当无构造器时，使用的是super的构造方法
 * 自动拆装箱： jdk5之后的版本支持，在编译期自动生成对应的字节码
 * 泛型集合取值：自动进行了泛型擦除，添加list.add（Object） ，获取，list.get()返回object，然后将object转化为泛型指定的类型
 * 局部变量的泛型信息没有被擦除，方法的返回值、参数泛型类型是可以获取到的
@@ -803,12 +837,61 @@ class Result{
 }
 ```
 * 使用volatile可以解决指令重排的问题 
+**volatile可以保证代码的可见性，能禁止指令重排，法保证代码的原子性，所以volatile无法保证线程安全性**
+使用volatile不能保证线程安全的情况：
+```java
+   public static volatile int i = 6;
+
+    public static void main(String[] args) throws InterruptedException {
+        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(8,8,
+                60, TimeUnit.SECONDS,new ArrayBlockingQueue<>(100),
+                new DefaultThreadFactory("test-pool"), new ThreadPoolExecutor.AbortPolicy());
+        for (int j = 0; j < 10; j++) {
+            threadPoolExecutor.execute(()->{
+                for (;;){
+                    if(i > 0){
+                        try {
+                            Thread.sleep(1000);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        i--;
+                        System.out.println(Thread.currentThread() + ":" + i );
+                    }else{
+                        break;
+                    }
+                }
+            });
+        }
+        System.out.println(Thread.currentThread().getName() + i);
+        threadPoolExecutor.shutdown();
+    }
+```
+执行结果：
+main6
+Thread[test-pool-1-5,5,main]:4
+Thread[test-pool-1-6,5,main]:3
+Thread[test-pool-1-4,5,main]:4
+Thread[test-pool-1-2,5,main]:4
+Thread[test-pool-1-8,5,main]:2
+Thread[test-pool-1-7,5,main]:1
+Thread[test-pool-1-1,5,main]:0
+Thread[test-pool-1-3,5,main]:-1
+Thread[test-pool-1-7,5,main]:-3
+Thread[test-pool-1-8,5,main]:-2
+Thread[test-pool-1-6,5,main]:-5
+Thread[test-pool-1-4,5,main]:-6
+Thread[test-pool-1-5,5,main]:-4
+Thread[test-pool-1-2,5,main]:-7
+分析：i>0处判断后进行了sleep，当睡眠线程都被唤醒时，都会进行i--操作，会出现i< 0的情况，导致计算结果错误
+
+
 
 创建Singleton5的对象的指令对应了四个步骤：
 0  new   #2//分配空间
 3  dup    //复制栈顶
-4  invkespecial #3  执行invokespecial
-7  putstatic   #4 对静态变量instance进行赋值
+4  invkespecial #3  执行invokespecial，初始化实例对象,为成员变量赋值
+7  putstatic   #4 把这个对象的内存地址赋值给引用变量
 4和7可能出现指令重排，可能将instance首先分配了空间，引用不为空，则某个线程正在执行构造方法（invokespecial），而另一个线程可能已经将instance进行了返回，这样其他线程拿到的就是未完全实例化只是分配了空间的instance
 
 ```java
@@ -986,7 +1069,7 @@ public class ClassLoaderTest {
 指针碰撞：这种情况将java堆的内存化为绝对规整的一块区域，所有用过的内存放在一边，空闲内存放在另一边，中间的指针作为分界点的指示器，分配内存就仅仅是吧指针指向空闲空间的那一边挪动一段与对象大小相等的距离
 空闲列表：java堆内存不是绝对规整的，已经使用的内存与未使用的内存空间相互交错，虚拟机维护一个列表，记录那些内存时可以用的，在分配内存时从列表中找到一块足够大的空间划分给对象实例，并更新列表上的记录
 
-### 24.对象分配内存时的兵法问题解决CAS与TLAB
+### 24.对象分配内存时的并发问题解决CAS与TLAB
 在并发情况下，可能出现正在给对象A分配内存，指针还没来得及修改，对象B又同时使用了原来的指针来分配内存的情况
 解决办法：
 * CAS （比较并交换）虚拟机采用cas配上失败重试的方式保证更新操作的原子性来对分配内存空间的动作进行同步处理
@@ -1224,7 +1307,7 @@ JVM（Java虚拟机）进程退出的条件通常包括以下几种情况：
 总之，JVM进程会在上述情况下退出。对于正常的应用程序退出，通常是应用程序完成其主要任务后自行退出。而对于异常情况，JVM会记录相关信息，并在退出前尽量释放资源和执行清理工作，以确保应用程序的稳定性。在开发和部署应用程序时，需要注意处理异常情况，以避免不必要的JVM退出。
 
 ### 什么是Full GC，什么情况下会产生Full GC
-Full GC是一次特殊的GC，这次GC会回收整个队内存，包括老年代、新生代、metaspace等
+Full GC是一次特殊的GC，这次GC会回收整个堆内存，包括老年代、新生代、metaspace等
 在Full GC的过程中所有的用户线程处于暂停状态
 什么情况下会产生full gc
 * 调用System.gc()建议虚拟机执行FullGC，虚拟机不一定会真的执行
@@ -1232,3 +1315,218 @@ Full GC是一次特殊的GC，这次GC会回收整个队内存，包括老年代
 * 老年代空间不足会触发full GC
 * 空间分配担保失败，可能对象晋升的平均大小 > 老年代剩余空间，也可能是minor GC后的晋升的对象大小超过了老年代剩余的空间
 
+
+### 公司jvm配置实例
+java -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=75.0 -XX:MinRAMPercentage=75.0 \ -javaagent:/opt/skywalking_agent/agent/skywalking-agent.jar -Dskywalking.agent.service_name=https://skywalking.dxy.cn -jar target/odep-web-1.0-SNAPSHOT.jar
+
+-XX:+UseContainerSupport 启动容器支持，让 JVM 可以根据容器的资源限制来自动调整内存大小
+-XX:MaxRAMPercentage=75.0 jvm运行时使用的最大内存量占用主机可用内存的百分比为75%
+-XX:InitialRAMPercentage=75.0 JVM 最初分配的内存量占主机可用内存的百分比，这里设置为 75%
+-XX:MinRAMPercentage=75.0 JVM运行时使用的最小内存量占主机内存的百分比，这里设置为75%
+-javaagent:/opt/skywalking_agent/agent/skywalking-agent.jar Java应用程序中的Java代理器路径
+-Dskywalking.agent.service_name=https://skywalking.dxy.cn 设置jvm系统属性
+
+### 如何查看jvm使用的垃圾回收器
+1. 查看jvm默认的垃圾回收器可以使用以下命令：
+Java -XX:+PrintCommandLineFlags -version
+
+jdk8 默认使用的是 parallel scanvenge + parallel old
+默认开启指针压缩
+
+-XX:InitialHeapSize=268435456 -XX:MaxHeapSize=4294967296 -XX:+PrintCommandLineFlags -XX:+UseCompressedClassPointers -XX:+UseCompressedOops -XX:+UseParallelGC
+java version "1.8.0_291"
+Java(TM) SE Runtime Environment (build 1.8.0_291-b10)
+Java HotSpot(TM) 64-Bit Server VM (build 25.291-b10, mixed mode)
+2. 查看某个jvm进程实例使用的垃圾回收器
+首先使用`jps`命令查看对应的jvm进程
+然后使用`jinfo -flag UseG1GC pid`命令查看指定的参数是否在命令行中被使用
+例如查看jvm是否使用了cms垃圾回收器
+jinfo -flag UseConcMarkSweepGC 55376
+-XX:+UseConcMarkSweepGC
+
+### 关于GC日志的参数
+jdk8中开启GC日志的方法：
+-verbose:gc  与 -XX:+PrintGC 等价，-XX:+PrintGC被标记成了deprecated
+-XX:+PrintGCDetails 开启详细日志模式，在这种模式下，日志格式和所使用的GC算法有关
+-XX:+PrintGCDateStamps 在gc日志中加上时间戳信息
+-Xloggc:/path/to/gc.log 将gc日志输出到指定的文件中
+-XX: +HeapDumpOnOutOfMemoryError 让虚拟机在堆内存溢出时自动生成堆转储快照文件
+-XX: +HeapDumpOnCtrlBreak 使用ctrl + break键让虚拟机生成堆转储快照文件
+
+### 指定垃圾回收器的参数
+-XX:+UseConcMarkSweepGC 启用cms进行老年代回收
+cms垃圾回收器只能与ParNew的年轻代垃圾回收器配合使用，所以这个参数默认启用了 -XX:+UseParNewGC;当CMS 老年代出现了很多内存碎片时，它还会使用SerialOld进行老年代回收
+所以：-XX:+UseConcMarkSweepGC=ParNew+CMS+Serial Old
+-XX:+UseG1GC 启用G1垃圾回收器
+-XX:+UseParallelGC 使用并行垃圾回收器（parallel scavenge + parallel old 使用并行垃圾回收器）
+所以-XX:+UseParallelGC=Parallel Scavenge+Parallel Old
+-XX:+UseSerialGC 使用单线程串行垃圾回收器，在单核cpu，小内存的情况下次啊使用比较合适
+-XX:+UseSerialGC=Serial New+Serial Old
+
+### hotspot参数分类
+标准参数 以`-`开头，所有的hotspot虚拟机都支持
+非标准参数，以`-X`开头，特定版本hotspot支持
+不稳定参数：以`-XX`开头，下个版本可能取消
+
+
+JVM 自带工具使用
+
+**jstat JVM内存信息统计**
+查看各个功能和区域的统计信息
+* -class 查看类加载信息
+* -gc 监视jvm的堆状况，包括一个Eden区，两个survivor 区，老年代、永久代等容量、占用情况、垃圾合计等信息
+* -gccapacity 监视内容与 -gc相同，输出堆哥哥区域使用到的最大、最小空间
+* -gcutil 监视内容与-gc基本相同，输出主要关注已经使用空间占总空间的百分比
+* -gccasuse 与-gcutil功能一样，额外输出导致上一次垃圾手机产生的原因
+* -gcnew 监视新生代垃圾收集状况
+
+jstat -gc 68963 1000 10
+ S0C    S1C    S0U    S1U      EC       EU        OC         OU       MC     MU    CCSC   CCSU   YGC     YGCT    FGC    FGCT     GCT   
+8704.0 8704.0  0.0   8704.0 69952.0   3400.2   174784.0   44053.7   62632.0 58544.8 8368.0 7587.4     27    0.317   4      0.029    0.346
+8704.0 8704.0  0.0   8704.0 69952.0   3400.2   174784.0   44053.7   62632.0 58544.8 8368.0 7587.4     27    0.317   4      0.029    0.346
+8704.0 8704.0  0.0   8704.0 69952.0   3400.2   174784.0   44053.7   62632.0 58544.8 8368.0 7587.4     27    0.317   4      0.029    0.346
+8704.0 8704.0  0.0   8704.0 69952.0   3400.2   174784.0   44053.7   62632.0 58544.8 8368.0 7587.4     27    0.317   4      0.029    0.346
+S0C：表示幸存区0的当前容量。
+S1C：表示幸存区1的当前容量。
+S0U：表示幸存区0的使用容量。
+S1U：表示幸存区1的使用容量。
+EC：表示伊甸园区（Eden）的当前容量。
+EU：表示伊甸园区的使用容量。
+OC：表示老年代（Old）当前容量。
+OU：表示老年代的使用容量。
+MC：表示元数据区（Metaspace）的当前容量。
+MU：表示元数据区的使用容量。
+CCSC：表示压缩类空间的当前容量。
+CCSU：表示压缩类空间的使用容量。
+YGC：表示从应用程序启动到采样时发生的年轻代垃圾收集次数。
+YGCT：表示从应用程序启动到采样时年轻代垃圾收集所用的时间（单位秒）。
+FGC：表示从应用程序启动到采样时发生的完全垃圾收集次数。
+FGCT：表示从应用程序启动到采样时完全垃圾收集所用的时间（单位秒）。
+GCT：表示从应用程序启动到采样时垃圾收集总时间（单位秒）。
+
+**jinfo JVM参数查看和修改**
+查看和调整jvm启动和运行参数
+查看正在运行java应用程序的扩展参数
+jinfo 68963
+查看某一具体参数是否被设置
+jinfo -flag PrintGCDetails 68963
+输出 -XX:-PrintGCDetails    打印日志参数的参数并未被设置
+
+开启或关闭某个参数
+jinfo -flag [ + | - ]name pid
+修改指定的参数值
+jinfo -flag name=value pid
+jinfo -flag +PrintGCDetails 68963  开启打印gc详情参数
+
+查看老年代大小
+jinfo -flag OldSize 68963       
+输出：-XX:OldSize=178978816
+
+**jmap jvm内存占用信息和快照**
+监控堆内存的使用情况，生成堆内存快照文件，查看堆内存区域配置信息
+jmap -dump 生成java堆转储快照，格式为-dump:[live,]format=b,file=dump.bin
+jmap -heap 显示java堆详情信息，使用了什么垃圾回收器，参数设置、分代情况等,新生代，老年代的内存占用情况
+jmap -histo 现实堆中的对象统计信息，包括类、实例数量、合集容量
+jmap -dump -F  -dump 选项不响应时，强制生成dump快照
+
+jmap -dump:live,format=b,file=/home/myheapdump.hprof 68963
+生成堆的dump文件
+
+**jstack jvm线程信息监控**
+查看线程信息，生成线程快照
+jstack -F 68963 正常输出的请求不被响应时，强制输出线程堆栈
+jstack -l 除堆栈外，会打印出额外的锁信息，在发生死锁时可以用jstack -l pid来观察锁持有情况 
+jstack -m 如果调用到本地方法，可现实c/c++堆栈
+
+jstack -l 68963
+如果存在死锁则会有如下输出：
+
+Found one Java-level deadlock:
+=============================
+"mythread2":
+  waiting for ownable synchronizer 0x000000076aea4848, (a java.util.concurrent.locks.ReentrantLock$NonfairSync),
+  which is held by "mythread1"
+"mythread1":
+  waiting for ownable synchronizer 0x000000076aea4878, (a java.util.concurrent.locks.ReentrantLock$NonfairSync),
+  which is held by "mythread2"
+
+Java stack information for the threads listed above:
+===================================================
+Found 1 deadlock.
+
+jstack -l 68963
+输出信息
+2023-10-29 15:01:17
+Full thread dump Java HotSpot(TM) 64-Bit Server VM (25.291-b10 mixed mode):
+
+"HikariPool-1 housekeeper" #76 daemon prio=5 os_prio=31 tid=0x00007f9d127d4000 nid=0xbc0f waiting on condition [0x0000000309a81000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+        at sun.misc.Unsafe.park(Native Method)
+        - parking to wait for  <0x00000006c4dd64f8> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+        at java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:215)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos(AbstractQueuedSynchronizer.java:2078)
+        at java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:1093)
+        at java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:809)
+        at java.util.concurrent.ThreadPoolExecutor.getTask(ThreadPoolExecutor.java:1074)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1134)
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+        at java.lang.Thread.run(Thread.java:748)
+
+   Locked ownable synchronizers:
+        - None
+
+"DestroyJavaVM" #65 prio=5 os_prio=31 tid=0x00007f9d1238d800 nid=0x1303 waiting on condition [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+   Locked ownable synchronizers:
+        - None
+
+"http-nio-7001-Acceptor" #63 daemon prio=5 os_prio=31 tid=0x00007f9d1279f800 nid=0xb503 runnable [0x0000000309675000]
+   java.lang.Thread.State: RUNNABLE
+        at sun.nio.ch.ServerSocketChannelImpl.accept0(Native Method)
+        at sun.nio.ch.ServerSocketChannelImpl.accept(ServerSocketChannelImpl.java:424)
+        at sun.nio.ch.ServerSocketChannelImpl.accept(ServerSocketChannelImpl.java:252)
+        - locked <0x00000006c4ddb118> (a java.lang.Object)
+        at org.apache.tomcat.util.net.NioEndpoint.serverSocketAccept(NioEndpoint.java:574)
+        at org.apache.tomcat.util.net.NioEndpoint.serverSocketAccept(NioEndpoint.java:80)
+        at org.apache.tomcat.util.net.Acceptor.run(Acceptor.java:106)
+        at java.lang.Thread.run(Thread.java:748)
+
+   Locked ownable synchronizers:
+        - None
+
+**jhat 分析jvm堆快照工具**
+使用jmap -dump生成内存快照文件后，可以使用jhat将dump文件转成html形式，然后通过在浏览器中查看堆的情况
+jmap -dump:live,format=b,file=/home/myheapdump.hprof 68963
+jhat /home/myheapdump.hprof
+jhat会启动一个http服务，端口号是7000
+在浏览器中直接访问http://localhost:7000
+可以查看系统中的所有对象情况，内存溢出情况
+
+
+
+
+**VisualVM**
+可以离线分析dump文件
+
+**jconsole**
+监控jvm运行状态、内存使用情况、线程状态等，提供对jvm垃圾回收器和类加载器的配置选项
+
+
+## 线上问题排查思路：
+### 出现OOM问题时进行排查
+1. 出现问题时，视项目的重要程度，如果项目比较重要，访问变慢或者访问宕机影响比较大，则优先重启服务，然后再次观察线上的服务器（如果允许，可以使用-XX: +HeapDumpOnOutOfMemoryError 参数让jvm在出现内存溢出时将内存快照dump下来）
+2. 从日志文件中检索JVM的OOM错误信息，确认是不是由OOM导致的问题，如果是OOM问题，需要区分是堆内存溢出还是栈内存溢出
+3. 用前面dump出来的文件使用MAT工具进行分析（或是在出现OOM的节点使用jmap -dump命令将内存快照dump下来）
+4. 使用top命令观察cpu占用较高的java进程，然后使用top -Hp 1232(pid)定位具体的占用CPU高的线程
+5. 查看dump文件中存活类实例，分析实例中实例对象较多的类，定位到代码中具体的类的引用，观察是不是存在内存泄漏的情况
+6. 修改代码在本地进行模拟压力测试，确认问题解决重新发布线上
+
+
+### 线程诊断与排查问题--cpu飙高的问题排查
+原因分析：可能是死锁导致线程被阻塞，cpu花费更多的时间在等待资源上；可能是死循环导致cpu飙高，也有可能是因为jvm内存分配不合理导致垃圾回收频繁导致cpu占用率高
+* 使用top命令定位哪个进程对CPU的占用过高 
+* top -Hp pid 查看某个进程中的线程占用情况
+* ps H -eo pid,tid,%cpu|grep pid 进一步定位哪个线程引起cpu占用过高
+* 使用jstack pid 查看线程详情，根据线程id找到有问题的线程，（可能是死锁，可能是死循环等问题），定位到线程行数
+* 可以使用jstack检测进程中出现的死锁

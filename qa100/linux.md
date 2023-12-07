@@ -1,6 +1,16 @@
 # linux
 操作系统时计算机硬件和用户之间的桥梁
 
+## linux的启动流程
+docker启动与kvm启动的区别是啥
+docker启动需要宿主机的内核
+kvm启动
+1. bios启动： 基本输入输出系统，写入主板的固件
+2. MBR（master boot record）加载 硬盘的主引导记录，磁盘驱动器最开始部分的一个特殊的启动扇区
+3. grub启动引导阶段：执行bootloader主程序（stage1）、调用core.img(stage 1.5)、加载grub（stage 2）
+4. initrd/initramfs协助内核启动
+5. rootfs 
+
 ## 虚拟机中的三种网络连接模式
 
 桥接模式:虚拟系统可以和外部系统相互通信，但是容易造成IP冲突
@@ -41,31 +51,48 @@ kdump 内存崩溃转储机制
 
 
 ## 远程登录
-
-
-
+### ssh命令
+* 构建ssh密钥对
+ssh-keygen -t rsa
+* 查看主机是否添加密钥对
+ssh-kengen -F 192.168.1.101
+* 删除主机密钥对
+ssh-kengen -R 192.168.1.101
+* 通过用户名和主机直接登陆
+ssh  user@hostname   
+ssh root@192.168.1.101
+* 指定端口登陆
+ssh -p 8080 root@192.168.1.101
+* 绑定源地址(指定客户端用哪个IP链接到SSH)
+ssh -b 192.168.1.102 root@192.168.1.101
+* 使用ssh在远程主机上执行一条命令
+ssh root@192.168.1.101 ls -l
+* 在远程主机上运行一个图形界面程序
+ssh -X root@192.168.1.101
 
 
 
 ## vim/vi
 
 三种模式：
-> 命令模式，刚用vi打开文件，进入命令模式
+> 正常模式，刚用vi打开文件，进入正常模式
   快捷键：
   *  yy 拷贝当前行
   *  p 粘贴拷贝内容
   *  4yy 拷贝当前行（包含当前行）往下的4行
   *  dd删除当前行
   *  4dd 删除当前行（包含当前行）往下的4行
-  *  G 定位到最后一行
+  *  shift +g 定位到最后一行
   *  gg定位到第一行
   *  u 撤销，撤销上一次操作
-  *  20G，定位到第20行
+  *  定位到20行，20+ shift+g，定位到第20行
+  *  0 0键跳转到行首
+  *  $ $键跳转到行尾
   
 
-> 输入模式：按i（insert），o, O,I,A,R,r 都可以进入输入模式
+> 插入模式：按i（insert），o, O,I,A,R,r 都可以进入输入模式
 
-> 底线模式：esc，再按shift+: 进入底线模式，输入wq（保存并退出）
+> 命令行模式：esc，再按shift+: 进入命令行模式，输入wq（保存并退出），输入q（退出）
   常用命令：
   * q! 强制退出，不保存
   * /abc 查找abc字符串，使用n（next）进行下一个匹配查找
@@ -79,7 +106,7 @@ shutdown -h 1 一分钟后关机
 shutdown -r now 立即重启
 halt 关机
 reboot 立即重启
-sync 将内存数据同步到磁盘
+sync 将内存数据同步到磁盘（在上面的关机命令中实际上已经先执行了sync，然后再执行关机）
 
 ## 登陆注销
 su - root 切换到root用户
@@ -87,11 +114,12 @@ logout 注销用户（图形界面（运行级别3）注销无效）
 exit 退出终端或注销用户
 
 ## 用户管理
-useradd 添加用户
+useradd abc 添加用户
+添加用户abc默认会在/home下创建abc目录作为用户的工作目录
 
 useradd -d /home/test abc 指定/home/test为新用户abc的工作目录
 
-passwd abc 修改用户abc的密码
+passwd abc ABC123 修改用户abc的密码
 
 userdel abc 删除abc用户，不删除用户目录
 userdel -r abc 删除abc用户，并删除用户目录
@@ -110,7 +138,7 @@ useradd -g test1 testgroup1
 usermod -g test1 testgroup2
 
 
-/etc/passwd 文件：用户的配置文件，记录用户的各种信息
+/etc/passwd 文件：用户的配置文件，记录用户的各种信息,记录用户的信息，含义 ： 用户名：口令：用户标识号：组标识号：注释性描述：主目录：登陆shell
 /etc/shadow 文件：口令配置文件
 /etc/group 文件： 组配置文件记录linux包含的组信息
 
@@ -132,7 +160,7 @@ systemctl get-default 查看默认运行级别
 systemctl set-default multi-user.target 修改默认级别为3
 systemctl set-default graphical.target 修改默认级别为5
 
-找回root密码
+### 找回root密码
 使用单用户模式修改密码
 
 ## 帮助指令
@@ -140,13 +168,185 @@ man 获取帮助信息
 man ls
 help cd
 
-## 文件目录指令
+## alias  在shell会话中定义临时别名
+alias ll = " ls -l"
+移除别名
+unalias ls
+# 文件目录指令
+## cd
+cd .. 返回上一级
+cd - 返回上一个目录
+
+## cp 命令 复制命令
+cp -r dir1/ dir2/ 将dir1目录下的文件递归复制到dir2中
+
+## rm 删除命令
+rm file.txt 删除文件
+rm -r dir 递归删除目录下的文件
+rm -rf dir2 强制递归删除目录下的文件
+
+## mv 在文件系统中移动文件和目录
+mv source_file des_folder/ 移动文件到des_folder目录下
+
+## mkdir 创建文件夹
+mkdir images/
+mkdir -p abc/efg 创建多级目录
+## rmdir 删除目录
+rmdir images 删除空目录
+rm -rf abc/efg 强制删除整个目录
+
+## touch： 创建空文件或更新文件的时间戳
+touch example.txt 文件不存在，则创建文件，如果文件存在，则更新文件的访问时间和修改时间
+touch -t 202309251200 example.txt 创建文件时指定特定的时间戳
+touch -m old_file
+## pwd
+显示当前所在目录
+
+## cp 拷贝文件命令
+cp helloworld abc/ 拷贝文件到abc目录下
+cp -r /home/bbb/ /opt/ 拷贝文件夹
+\cp -r /home/bbb/ /opt/ 强制覆盖/opt/下的重复文件
+
+## rm 删除文件
+rm helloworld 删除
+rm -f helloworld 强制删除
+rm -rf helloworld 强制递归删除
+
+## mv 移动文件、目录或重命名
+mv helloworld helloworld1 重命名
+mv helloworld abc/helloworld1 移动文件到abc目录下，并对文件重命名
+
+## cat 查看文件
+cat helloworld 查看文件
+cat -n helloworld 查看文件并显示行号
+cat -n /etc/profile|more 使用管道命令符号，将第一个命令的结果返回给后面的指令
+
+## more 分屏显示命令
+
+## less 分屏查看文件内容，允许文件查找
+less helloworld.txt
+可以在末尾通过？或/ 进行查找
+/abc 查找abc
+
+## echo 输出内容到控制台
+
+## tail 输出文件尾部内容
+tail -n 200 -f tomcat.txt 实时监控日志信息
+
+## head 显示文件头几行
+head -n 200 tomcat.txt 显示文件头200行
+
+## > 输出重定向
+echo 'helloworld' > helloword.txt 
+## >>  追加
+echo 'helloworld' > helloword.txt
+
+
+
+## ln 软连接，符号链接（将一个文件指向另一个文件）
+ln -s /root /home/myroot
+
+## history 显示命令执行记录
+history 10显示最近执行的10条命令
+
+# 时间日期指令
+## date 显示当前时间
+date %Y 显示年
+date '+%Y-%m-%d' 显示年月日 2023-12-05
+date -s '2023-12-05 00:00:00' 设置当前时间
+
+## cal 日历命令
+
+# 查找指令
+## find 查找命令
+find /home -name helloword.txt 按文件名查找
+find /home/lijie3 -user lijie3  按用户名查找文件
+find / -size +200M/G/k  按文件大小查找,查找大于200M的文件
+
+## locate 快速定位文件路径
+updatedb 更新文件数据库
+locate helloworld.txt 在updatedb之后执行
+
+## grep 过滤查找，与管道符号｜一起使用
+cat helloworld.txt|grep helloworld  查找helloworld字符
+cat helloworld.txt|grep -n helloworld 查找helloworld并显示行号
+cat helloworld.txt|grep -i helloworld 忽略大小写查找helloworld
+grep -n 'helloworld' helloworld.txt 查找helloworld字符
+
+
+# 用户管理
+一个文件、一个目录有所有者和所属组
+## chown 修改文件所有者
+chown abc helloworld.txt 修改文件所有者为abc
+## chgrp 修改文件所在组
+chgrp dxy helloworld.txt 修改文件所属组为dxy
+## groupadd 创建组
+groupadd dxy 创建组dxy
+useradd -g dxy lijie 创建用户并添加到组
+## usermod 修改用户所在组
+usermod -g dxy lijie 修改lijie所在组为dxy
+usermod -d myroot lijie 修改用户的工作目录为myroot
+
+## chmod 修改权限
+chmod u=rwx,g=rx,o=x nginx 给所有者、组、其他组分别赋予权限
+chmod o+r helloworld 给其他人赋予r的权限 
+chmod o-w helloworld 给其他人移除w权限
+chmod 751 helloworld 给所有者读写执行、组读执行、其他用户执行权限
+
+## kill 命令
+kill [-s q] pid 指定要发送的信息
+kill -l pid 列出所有可用的信息名称
+kill pid 杀死进程
+kill -KILL pid 强制杀死进程
+kill -HUP pid 发送sigHUB 信号
+kill -9 pid 彻底杀死进程
+
+# 压缩解压命令
+gzip helloworld.txt
+gunzip helloworld.txt.gz 解压
+
+zip -r test.zip . 递归压缩当前目录
+unzip -d /test test.zip 解压到test目录下
+
+tar 
+-c 产生.tar打包文件
+-v 显示详细信息
+-f 指定压缩后文件名
+-z 打包同时压缩
+-x 解压.tar文件
+
+tar -zcvf test.tar.gz helloworld.txt 将helloworld.txt压缩成test.tar.gz
+tar -zxvf test.tar.gz 解压文件
+## 文档编辑命令
+
+## 文件传输命令
+
+## 磁盘管理命令
+
+## 磁盘维护命令
+
+## 网络通信命令
+
+## 系统管理命令
+
+## 系统设置命令
+
+## 备份压缩命令
+
+## 设备管理命令
 
 
 
 
 
+## 查看端口占用情况lsof(list open files) 列出当前系统打开文件的工具
+list -i:2181
 
+COMMAND   PID   USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+java    60366 lijie3   75u  IPv6 0x7c72a1d3184302ef      0t0  TCP *:eforward (LISTEN)
+
+## 查看端口占用情况
+netstat -tunlp|grep 2181
 
 
 
@@ -244,3 +444,4 @@ nc -lk 9999
 ## 查询程序路径
 `which java`
 /Library/Java/JavaVirtualMachines/jdk1.8.0_291.jdk/Contents/Home/bin/java
+

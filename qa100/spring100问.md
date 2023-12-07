@@ -7,7 +7,7 @@ spring是一个java开发的生态体系，包含spring framework，springboot�
 解耦
 
 ## BeanFactory和ApplicationContext
-BeanFactory提供基本的bean获取功能，而ApplicationContext是BeanFactory的一个子接口，主要是提供BeanFactory的一些拓展功能，比如提BeanFactoryPostProcessor或BeanDefinitionRegistryPostProcessor实现对BeanDefinition的手动添加和修改操作，提供事件发布与监听的功能，提供BeanPostProcessor实现对bean初始化前后的修改等
+BeanFactory提供基本的bean获取功能，而ApplicationContext是BeanFactory的一个子接口，主要是提供BeanFactory的一些拓展功能，比如提供BeanFactoryPostProcessor或BeanDefinitionRegistryPostProcessor实现对BeanDefinition的手动添加和修改操作，提供事件发布与监听的功能，提供BeanPostProcessor实现对bean初始化前后的修改等
 ApplicationContext也是对BeanFactory功能的组合
 
 ApplicationContext 提供的扩展功能：
@@ -219,7 +219,7 @@ com.dxy.data.springtest.beanFactory.B@783a467b
 * `FileSystemXmlApplicationContext` --从文件系统路径下加载bean的配置文件
 * `XmlBeanDefinitionReader` --从xml文件中读取bean的定义信息放入到BeanDefinition，最后作为属性传给beanFactory
 * `AnnotationConfigApplicationContext` --从配置类@Configuration中加载beanDefinition
-* `AnnotataionConfigServletWebServerApplicationContext` --在AnnotationConfigApplicationContext扩展web servlet容器
+* `AnnotataionConfigServletWebServerApplicationContext` --在AnnotationConfigApplicationContext基础上扩展web servlet容器
 ```java
 package com.dxy.data.springtest.applicationcontext;
 
@@ -421,6 +421,17 @@ ImportTest{name='this is a test'}
 2023-05-21 22:46:55.690  INFO 69429 --- [           main] c.d.d.s.Component.LifeCycleBean          : -------destroy------
 Disconnected from the target VM, address: '127.0.0.1:64535', transport: 'socket'
 ```
+bean生命周期总结：
+1. 实现InstantiationAwareBeanPostProcessor接口，执行postProcessBeforeInstantiation方法，如果没有返回null，则会替换到原来的bean
+2. bean的构造器执行
+3. 实现InstantiationAwareBeanPostProcessor接口，执行postProcessAfterInstantiation方法，返回true，则会继续进行依赖注入，如果返回false，则会跳过依赖注入
+4. 实现InstantiationAwareBeanPostProcessor接口，执行postProcessProperties方法，在依赖注入之前执行
+5. 实现BeanPostProcessor接口，在初始化之前执行postProcessBeforeInitialization方法
+6. 实现InitializingBean接口，在依赖注入阶段之后执行初始化方法执行afterPropertiesSet
+7. 使用@PostConstruct标注方法，在afterPropertiesSet方法执行之后执行
+8. 实现InitializingBean接口，在初始化之后执行postProcessAfterInitialization方法，这里可能替换掉原油的bean，如进行代理增强
+9. 实现DestructionAwareBeanPostProcessor接口，在销毁之前执行postProcessBeforeDestruction方法
+10. 实现DisposableBean接口，销毁时执行destroy方法（或是在方法上标注@PreDestroy，销毁时执行标注方法）
 ### 模板方法模式 --在bean生命周期阶段使用的设计模式
 固定不变的步骤采用具体的方法实现，对与具体的步骤进行抽象，由子类来实现
 BeanPostProcessor 调用的原理
@@ -2212,11 +2223,70 @@ run方法的执行：
 11. refreshContext加载spring的IOC容器（spring的配置类都是通过invokeBeanFacotoryPostProcessors这个方法去执行的），这一步时spring 容器启动最关键的一步，加载所有的自动配置类，创建servlet容器
 12. 记录springboot启动结束时间
 
+spring容器refresh方法中做的工作
+refresh方法的实现是在AbstractApplicationContext中
+```java
+
+			// Prepare this context for refreshing.
+      //刷新钱的预处理准备
+			prepareRefresh();
+
+			// Tell the subclass to refresh the internal bean factory.
+      //获取BeanFactory；默认实现是DefaultListableBeanFactory
+			ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory();
+
+			// Prepare the bean factory for use in this context.
+      //BeanFactory的准备工作（对BeanFacotry进行设置，如context类加载器、BeanPostProcessor、Aware自动装配等）
+			prepareBeanFactory(beanFactory);
+
+			try {
+				// Allows post-processing of the bean factory in context subclasses.
+        //BeanFactory准备工作完成后的后置处理工作
+				postProcessBeanFactory(beanFactory);
+
+				StartupStep beanPostProcess = this.applicationStartup.start("spring.context.beans.post-process");
+				// Invoke factory processors registered as beans in the context.
+        //执行BeanFactoryPostProcessor的postProcessBeanFactory方法
+				invokeBeanFactoryPostProcessors(beanFactory);
+
+				// Register bean processors that intercept bean creation.
+        //注册BeanPostProcessor（Bean的后置处理器），在创建bean的前后会执行其中的方法
+				registerBeanPostProcessors(beanFactory);
+				beanPostProcess.end();
+
+				// Initialize message source for this context.
+        //初始化MessageSource组建（做国际化功能，进行消息绑定，消息解析等）
+				initMessageSource();
+
+				// Initialize event multicaster for this context.
+        //初始化时间派发器
+				initApplicationEventMulticaster();
+
+				// Initialize other special beans in specific context subclasses.
+        //子类充血这个方法，在容器刷新时可以自定义逻辑
+				onRefresh();
+
+				// Check for listener beans and register them.
+        //注册应用的监听器，注册实现了ApplicationListener接口的监听器bean，监听器被注册到ApplicationEventMulticaster中
+				registerListeners();
+
+				// Instantiate all remaining (non-lazy-init) singletons.
+        //初始化剩下所有非懒加载的单例bean
+				finishBeanFactoryInitialization(beanFactory);
+
+				// Last step: publish corresponding event.
+        //完成context的刷新，调用LifeCycyleProcessor的onRefresh方法，发布ContextRefreshEvent
+				finishRefresh();
+        ...
+```
+
 ## 20 实现自定义starter
-1. 编写自动配置类
+1. 编写自动配置类(使用@Configuration标注)，编写业务逻辑代码
 2. 使用spi机制编写spring.factories 文件，将自定义的自动配置类放在key EnableAutoConfiguration下
 3. 关于工程结构：官方推荐建一个starter（辅助性的依赖管理）和一个autoconfigure（实现自动配置类及其他逻辑）
 4. 关于starter的命名：以自己的名称+spring-boot-starter开头：test1-spring-boot-starter
+
+
 
 ## 21 springboot自动配置原理
 1. 从启动类上的@SpringBootApplication作为起点，标志启动类是一个配置类
@@ -2812,6 +2882,55 @@ springboot支持配置文件、环境变量、命令行参数等多种方式来�
 猜测：
 在spring中yml配置文件的优先级高于properties配置文件，如果找到了yml配置文件，则yml中的配置文件会覆盖properties中的配置文件
 在项目中，A应用依赖于B jar包，A、B中同时使用了properties配置文件，则B jar包中的配置文件不生效；如果A中使用properties，B中使用了yml，则B中yml配置文件生效;如果在A中使用了yml文件，在B中也使用yml配置文件，则B中的yml配置文件不会生效
+
+
+
+### spring中用到的设计模式
+1. 简单工厂模式
+BeanFactory 通过getBean传入一个唯一标识来获取bean对象
+beanfactory.getBean(String name);
+
+2. 工厂方法模式
+FactoryBean是典型的工厂方法模式，当一个Bean是FactoryBean时，通过BeanFactory.getBean(String name)获取该bean时，会自动调用FactoryBean.getObject()方法获取对应的bean实例，如SqlSessionFactory使用的时SqlSessionFactoryBean
+
+3. 单例模式，一个类仅有一个实例，提供一个访问他的全局访问点，spring中默认情况下的bean都是单例的
+4. 适配器模式：SpringMVC中的HandlerAdapter是一个典型的适配器
+5. 代理模式：spring 的aop使用了代理模式，可以使用jdk的动态代理和cglib代理
+6. 观察者模式：spring中的observer模式常用的地方是listener的实现，如ApplicationListener
+
+### springboot中的aop代理
+在springboot2.* 之后的版本默认情况下都是使用的cglib作为动态代理的方式
+
+### bean的注入方式
+1. @Configuration +@Bean注入容器
+2. @ComponentScan 扫描指定包下的@Component及@Component的衍生注解@Controller、@Service、@Repository的衍生注解
+3. 通过Import倒入具体的类或是ImportSelector
+4. 实现BeanDefinitioinRegistryPostProcessor，自定义倒入BeanDefinition
+5. 使用FactoryBean封装bean到容器中
+
+### spring的Async的原理
+spring异步方法的使用：
+* 通过@EnableAsync开启异步方法功能支持
+* 在需要异步的方法上添加@Async注解
+* 对于需要有返回值的异步方法，返回值需要使用Future<Object>进行包装，在方法体中使用AsyncResult返回
+
+@Asnyc实现原理：
+1. 在@EnableAsync注解上使用了@Import引入了AsyncConfigurationSelector，进入在spring容器中注入了ProxyAsyncConfiguration 这个配置类（当使用的ASPECTJ时，注入另外一个配置类）
+2. ProxyAsyncConfiguration配置类中引入了AsyncAnnotationBeanPostProcessor这个BeanPostProcessor
+3. AsyncAnnotationBeanPostProcessor 包含一个AsyncAnnotationAdvisor，这个advisor实际上继承自aop的Advisor，从这里能看出这里使用了AOP的代理机制来先实现方法的代理，
+4. 通过AsyncAnnotationAdvisor持有的AnnotationAsyncExecutionInterceptor代理了被Async标注的Bean方法，当执行方法时，会执行AnnotationAsyncExecutionInterceptor的invoke方法，将要执行的方法封装成一个任务，然后交给线程池去执行
+
+### 什么情况下BeanPostPorcessor中的方法会失效，在使用BeanPostProcessor时要注意什么
+1. 当BeanPostProcessor依赖了一个容器中的Bean时，那么被依赖的Bean被创建进行初始化时，将不会执行该BeanPostProcessor的方法
+2. BeanPostProcessor的实现类和其依赖的Bean无法使用AOP，因为spring的aop代理就是作为BeanPostProcessor实现的
+
+### BeanPostProcessor的注册方式
+1. 直接作为普通的bean注入，spring会自动将BeanPostProcessor优先加载到容器中(注意如果使用java配置类的方式以@Bean的方式注入，那么方法返回的类型必须是BeanPostProcessor类型或其子类型)
+2. 使用ConfigurableBeanFactory接口的addBeanPostProcessor方法添加
+
+
+
+
 
 
 
