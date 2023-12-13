@@ -293,6 +293,31 @@ chmod o+r helloworld 给其他人赋予r的权限
 chmod o-w helloworld 给其他人移除w权限
 chmod 751 helloworld 给所有者读写执行、组读执行、其他用户执行权限
 
+## chown 修改所有者
+chown lijie3 /home/test 修改文件所有者权限
+chown -R lijie3 /home/folder 递归修改文件夹所有者权限
+
+## chgrp 修改文件所在组
+chgrp goup1 /home/test 修改所有组为group1
+
+# 任务调度
+## crond定时任务调度
+crontab -e 开启定时任务的编辑
+*/1 * * * * ls -l /etc/ > /tmp/to.txt 执行调度任务的信息配置，每分钟执行一次
+
+## at定时任务，执行一次
+
+# 磁盘分区与挂载
+磁盘以文件的方式挂载在目录下
+linux 硬盘分为IDE和SCSI硬盘，目前基本上是SCSI硬盘
+ide硬盘标识为hdx～ ，sda 表示一块硬盘、sda1，sda2 标识磁盘的两个分区
+scsi硬盘的标识为sdx～
+
+lsblk -f查看磁盘的分区情况
+
+## 在linux下增加一块硬盘
+
+
 ## kill 命令
 kill [-s q] pid 指定要发送的信息
 kill -l pid 列出所有可用的信息名称

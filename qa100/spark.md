@@ -434,7 +434,7 @@ object SparkWordCount {
 ```
 
 ## 关于spark中的job，stage，task
-spark中的数据抽象都是RDD，支持两种类型的算子奥做：Transformation和Action
+spark中的数据抽象都是RDD，支持两种类型的算子：Transformation和Action
 Transformation算子的代码只有在遇到一个action算子时才会真正被执行
 Transformation算子主要包括：map、mapPartitions、flatMap、filter、union、groupByKey、repartition、cache等。
 Action算子主要包括：reduce、collect、show、count、foreach、saveAsTextFile等。

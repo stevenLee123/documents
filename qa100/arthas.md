@@ -70,7 +70,7 @@ arthas-client connect 172.16.1.133 3658
 
  ## dashboard 仪表板
  显示线程，内存，gc，系统环境等信息
- * 如果出现线程占用cpu过高，可以用threa tid来查看线程堆栈信息
+ * 如果出现线程占用cpu过高，可以用thread tid来查看线程堆栈信息
  * 查看内存占用情况，查看使用的垃圾回收器，查看垃圾回收时间和垃圾回收次数
  * 查看当前系统配置及环境配置信息
  
@@ -80,7 +80,7 @@ arthas-client connect 172.16.1.133 3658
  thread -n 5 显示最繁忙的5个线程
  thread 显示所有线程
  thread -b 显示处于阻塞状态的线程
-thread --state WAITING 查看某一状态的线程
+ thread --state WAITING 查看某一状态的线程
 
  ## jvm 虚拟机相关信息
 
@@ -203,6 +203,7 @@ mc Hello.java -d /root 编译生成class文件到root目录下
 redefine风险较高，有可能会失败
 redefine要在jad/watch/trace/monitor/tt等命令之后执行，否则会导致redefine的代码会被重置
 
+## 实际生产中为了快速解决线上bug可以使用下面的操作
 redefine Hello.class
 jad、mc、redefine串联操作：
 使用jad命令将字节码反编译成源代码 -〉修改源代码文件-〉使用mc命令将源代码编译成class文件-〉使用redefine命令将字节码文件在内存中执行，从而增强原来的类
@@ -284,6 +285,13 @@ x轴表示抽样数量
 2. 或是使用thread -n 5 查看占用cpu时间最高的几个线程
 3. 观察线程堆信息，使用jad com.steven.jvm.TestMemLeak main 反编译具体的方法，查看方法中的代码逻辑是否存在死循环或是方法是否存在被循环调用的情况
 
+## 使用arthas不停机解决线上问题
+当线上bug比较急时可以使用如下的方式进行问题修复
+1. 在服务器上部署arthas
+2. 使用jad --source-only 类全限定名 > /test/Test.java 反编译class文件为源码,使用其他编辑器修改源码
+3. 使用mc -c 类加载器hashocde /test/Test.java -d out/ 重新编译修改好的源码
+4. retransform out/Test.class 重新加载新的字节码
+当服务重启后，retransform的字节码会失效
 
 
 
