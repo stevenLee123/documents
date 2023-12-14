@@ -360,7 +360,7 @@ public class MyBeanPostProcessor  implements InstantiationAwareBeanPostProcessor
     @Override
     public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) throws BeansException {
         if(beanName.equals("lifeCycleBean")){
-            log.info("==========实例化之后执行，这里返回的对象如果不为null会替换掉原来的bean");
+            log.info("==========实例化之前执行，这里返回的对象如果不为null会替换掉原来的bean");
         }
         return null;
     }
@@ -403,7 +403,7 @@ public class MyBeanPostProcessor  implements InstantiationAwareBeanPostProcessor
 
 打印结果
 ```
-[main] c.d.d.s.Component.MyBeanPostProcessor    : ==========实例化之后执行，这里返回的对象如果不为null会替换掉原来的bean
+[main] c.d.d.s.Component.MyBeanPostProcessor    : ==========实例化之前执行，这里返回的对象如果不为null会替换掉原来的bean
 2023-05-21 22:46:55.026  INFO 69429 --- [           main] c.d.d.s.Component.LifeCycleBean          : ------construct.....
 2023-05-21 22:46:55.033  INFO 69429 --- [           main] c.d.d.s.Component.MyBeanPostProcessor    : ==========实例化之后执行，返回true 继续执行依赖注入，返回false会跳过依赖注入
 2023-05-21 22:46:55.033  INFO 69429 --- [           main] c.d.d.s.Component.MyBeanPostProcessor    : ==========依赖注入阶段执行，如@Autowired、@Value、@Resource
@@ -426,7 +426,7 @@ bean生命周期总结：
 2. bean的构造器执行
 3. 实现InstantiationAwareBeanPostProcessor接口，执行postProcessAfterInstantiation方法，返回true，则会继续进行依赖注入，如果返回false，则会跳过依赖注入
 4. 实现InstantiationAwareBeanPostProcessor接口，执行postProcessProperties方法，在依赖注入之前执行
-5. 实现BeanPostProcessor接口，在初始化之前执行postProcessBeforeInitialization方法
+5. 实现BeanPostProcessor接口，在初始化之前执行postProcessBeforeInitialization方法，其中判断bean是否实现了XXXAware接口，实现了aware接口调用对应的aware接口
 6. 实现InitializingBean接口，在依赖注入阶段之后执行初始化方法执行afterPropertiesSet
 7. 使用@PostConstruct标注方法，在afterPropertiesSet方法执行之后执行
 8. 实现InitializingBean接口，在初始化之后执行postProcessAfterInitialization方法，这里可能替换掉原油的bean，如进行代理增强
