@@ -1,6 +1,10 @@
 # spring 
 ## spring知识梳理
 * spring中用到的设计模式（简单工厂模式、工厂方法模式、代理模式、观察者模式（事件监听）、责任链模式、适配器模式（HandlerAdapter）、策略模式）
+* springboot的自动配置原理
+* springboot的启动流程
+* spring中bean的构建流程，bean的生命周期，bean的scope对应的含义，如何正确的在一个singleton的bean中正确的注入一个prototype的bean（使用@Lookup注解，注入ApplicationContext来通过容器获取bean）
+* @Lookup的实现原理（通过cglib动态代理从beanfactory中获取方法返回值需要的bean）
 
 ## 1. spring是什么
 spring是一个java开发的生态体系，包含spring framework，springboot等一系列开发框架其主要目的是简化开发，实现代码的解耦
