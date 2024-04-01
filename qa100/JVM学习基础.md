@@ -1,5 +1,14 @@
 # JVM
 
+## JVM 知识点：
+* jvm的组成
+* java类的加载过程，类加载的策略（双亲委派）
+* jvm内存布局
+* java垃圾回收，如何确定类可回收、垃圾回收算法、垃圾回收器、垃圾回收器能收集的区域
+* jvm内存模型，变量的可见性、happens before规则、synchronized的实现原理、锁膨胀的机制
+* jdk中自带的jvm监控、诊断工具
+* jvm的问题诊断、调优等
+
 学习路线
 ![学习路线](./image/jvm%E5%AD%A6%E4%B9%A0%E8%B7%AF%E7%BA%BF.png)
 
@@ -11,24 +20,38 @@
 
 ## java类加载机制
 java类加载机制就是将java类字节码加载到内存中，并转化为运行时数据结构，主要涉及到三个步骤：加载、连接、初始化
-类加载阶段：
+### 类加载阶段：
 * 加载loading： 查找字节码文件，将其载入到内存中，这一阶段就是将.class文件字节流加载到jvm中
 
 * 连接（包含以下三个步骤）：
-  验证verification：对字节码进行验证，确保其符合jvm规范，不会威胁jvm
-  准备preparation：这个阶段为jvm的类的静态变量分配内存空间，为其初始化默认值
-  解析Resolution: 将符号引用替换为直接引用的过程
-  *符号引用就是一个类中（当然不仅是类，还包括类的其他部分，比如方法，字段等），引入了其他的类，可是JVM并不知道引入的其他类在哪里，所以就用唯一符号来代替，等到类加载器去解析的时候，就把符号引用换成那个引用类的地址，这个地址也就是直接引用*
+  * 验证verification：对字节码进行验证，确保其符合jvm规范，不会威胁jvm
+  * 准备preparation：这个阶段为jvm的类的静态变量分配内存空间，为其初始化默认值
+  * 解析Resolution: 将符号引用替换为直接引用的过程
+  * 符号引用就是一个类中（当然不仅是类，还包括类的其他部分，比如方法，字段等），引入了其他的类，可是JVM并不知道引入的其他类在哪里，所以就用唯一符号来代替，等到类加载器去解析的时候，就把符号引用换成那个引用类的地址，这个地址也就是直接引用
 
 * 初始化Initialization：对类的静态变量进行初始化赋值，执行静态代码块。类被真正使用之前的最后一道屏障
 
-类加载器的种类：
+使用final static修饰的变量，如果是基本数据类型或String类型，会在链接的准备阶段进行赋值，当为其他引用类型时，在初始化阶段的`<clinit>`中进行赋值
+
+### 类初始化的触发时机：
+* 虚拟机启动，触发用户指定的主类
+* 遇到new指令时，触发初始化
+* 调用静态方法的指令时，初始化静态方法所在的类
+* 遇到访问静态字段的指令时，初始化改静态字段所在的类
+* 子类初始化会触发父类初始化
+* 使用反射API对某个类进行反射调用时，初始化该类
+
+
+### 类加载器的种类：
 * 引导类加载器，负责加载支持JVM运行的位于JRE的lib目录下的核心类库，比如rt.jar,charsets.jar等
 * 扩展类加载器：负责加载支撑JVM运行的位于jre的lib目录下的ext扩展目录中的jar包
 * 应用程序类加载器：负责加载ClassPath路径下的类包，主要是加载自己编写的应用程序类
 * 自定义加载器：负责加载用户自定义路径下的类包
 
-双亲委派模式:
+jdk9之后引入模块化的概念，扩展类加载器改名为平台类加载器，java.base等由启动类加载器加载，其他模块都由平台类加载器加载
+
+
+### 双亲委派模式:
 当一个类加载器收到加载类的请求时，优先将这个请求委派给父类加载器处理，当父类加载器无法处理时子类加载器才会去尝试加载类，这种模型保证类的一致性，避免类的重复加载
 
 双亲委派模式的破坏：
@@ -80,8 +103,10 @@ Java模块化与类加载机制
 
 
 
-### 4. 方法区（jdk1.7之前存在）（hotspot 1.8之后是元空间，使用的是操作系统的本地内存）--存储类相关的信息
-线程共享
+### 4. 元空间（方法区，jdk1.7之前存在，hotspot 1.8之后是元空间，使用的是操作系统的本地内存）--存储类相关的信息
+* 存放类元信息，方法元信息，常量池
+* 线程共享
+* 使用系统的直接内存，随着需要会进行扩容
 虚拟机启动时创建
 存放类的元数据信息、运行时常量值、静态变量（可能存在对象，在方法中存放的也是变量的引用，真正的变量放在堆中）、字段和方法数据，以及方法和构造函数的代码，包括用于类和实例初始化及接口初始化的特殊方法
 * 运行时常量池 Stringtable，不在操作系统本地内存中，在堆（heap）中
@@ -137,7 +162,7 @@ jdk1.6 在串池中不存在串时会将字符串对象复制到串池中，
 String s = new String("a") + new String("b");
 //返回false，s在堆中，而StringTable中没有“ab”
 s == "ab"
-//jdk1.8将字符串对象尝试放入串池中，如果有就不放入，没有则放入（不入池则s还是在堆中），同时将串池的对象返回，这是s已经在串池中
+//jdk1.8将字符串对象尝试放入串池中，如果有就不放入，没有则放入（不入池则s还是在堆中），同时将串池的对象返回，这时s已经在串池中
 //jdk1.6将会拷贝字符串到常量池中，s还是在堆中
 s2 = s.intern();
 //StringTable中已经存在“ab”，返回true
@@ -183,9 +208,8 @@ s == "ab"
 
 
 
-### 6. 使用javap命令（将class文件转译为jvm虚拟机指令），结合jvm虚拟机能查看代码完整的执行流程
 
-### 7. 堆 
+### 堆 
 * 存放对象的内存区域
 * 线程共享的一块内存区域，虚拟机启动时创建，垃圾回收器管理的主要区域
 新生代 分为一个eden区、两个survivor区
@@ -248,6 +272,14 @@ arthas 阿里提供的jdk诊断工具，涵盖了几乎所有的jdk自带的诊�
  * 查看线程状态： thread
  * 查看某一线程信息： tread  14 
 
+## java 内存模型JMM
+关于对象的可见性，遵循happens-brefore原则
+"Happens before"原则是并发计算中的一个概念，用于描述事件之间的顺序关系。它是指在多线程或多进程的计算环境中，如果事件 A 在时间上先于事件 B 发生，那么事件 A 就被认为是在事件 B 之前发生的。
+happends before 是一种内存可见性模型
+多线程下由于指令重排序导致数据可见性的问题
+A线程修改共享变量的值可能对B线程不可见
+JMM通过happends beofore提供了一个跨越线程的可见性的保障，如果操作A在时间上必然先于B发生，则A就认为在B之前发生
+happends before不表示指令执行的先后顺序，只要对最终的结果没有影响，jvm是允许指令重排序的
 
 ## 垃圾回收
 如何判定对象可以回收  -- 引用计数法、可达性分析
@@ -488,9 +520,114 @@ survivor设置参考：
   * 观察查发生FUll GC的老年代占用，将老年代内存预设调大1/4～1/3
   * 参数设置(老年代占用多少时进行垃圾回收) -XX:CMSInitiatingOccupancyFraction=percent
 
+## jdk中自带的监控与诊断工具
 
+### jps 查看java进程信息
+jps 查看进程id及启动类名
+jps -l 查看进程id及主类的全路径名
+jps -q 只输出lvmid,即进程id
+jps -m 输出传递给main方法的参数
+jps -v 输出jvm启动时显示指定的jvm参数
 
+### jstat 打印目标java进程的性能数据
+jstat -class 10385  查看jvm的类加载情况
 
+Loaded  Bytes  Unloaded  Bytes     Time   
+ 15544 30503.0        0     0.0       3.13
+
+jstat -compiler  打印即时编译相关的数据
+Compiled Failed Invalid   Time   FailedType FailedMethod
+   11726      0       0     2.61          0  
+
+jstat -gc -t 16593 1s 4  --打印垃圾回收相关数据，1s打印一次，打印4次,-t参数显示当前jvm运行的总时长，用来与垃圾回收的时间进行对比，判断jvm的垃圾回收是否太过频繁，是否存在内存泄漏的问题
+ S0C    S1C    S0U    S1U      EC       EU        OC         OU       MC     MU    CCSC   CCSU   YGC     YGCT    FGC    FGCT     GCT   
+ 0.0   22528.0  0.0   22370.4 176128.0 45056.0   155648.0   99759.0   78336.0 77508.5 9920.0 9476.9     20    0.134   0      0.000    0.134
+ 0.0   22528.0  0.0   22370.4 176128.0 45056.0   155648.0   99759.0   78336.0 77508.5 9920.0 9476.9     20    0.134   0      0.000    0.134
+ 0.0   22528.0  0.0   22370.4 176128.0 45056.0   155648.0   99759.0   78336.0 77508.5 9920.0 9476.9     20    0.134   0      0.000    0.134
+ 0.0   22528.0  0.0   22370.4 176128.0 45056.0   155648.0   99759.0   78336.0 77508.5 9920.0 9476.9     20    0.134   0      0.000    0.134
+
+### jmap 在堆内存占用出现持续增长、垃圾回收时间越来越长，越来越频繁时，可以将jvm的堆内存进行dump
+jmap -clstats 打印被加载的类信息
+jmap -histo 统计各个实例数据以及占用内存，按照占用内存从多到少的排序
+jmap -dump 导出java虚拟机堆快照
+jmap -dump:live,file=test.bin 16593 导出文件到test.bin中
+
+### jinfo 查看jvm进程的参数，如-X参数，-XX参数，以及在java代码中通过System.getProperty获取的-D参数
+jinfo 16593
+
+### jstack 打印目标java进程中各个线程的栈轨迹，以及线程持有的锁
+jstack 16593 
+jstack可以查看线程的状态、持有的锁、以及正在请求锁的状态，还可以分析具体的死锁代码
+
+jstack jvm线程信息监控
+查看线程信息，生成线程快照
+jstack -F 68963 正常输出的请求不被响应时，强制输出线程堆栈
+jstack -l 除堆栈外，会打印出额外的锁信息，在发生死锁时可以用jstack -l pid来观察锁持有情况 
+jstack -m 如果调用到本地方法，可现实c/c++堆栈
+
+jstack -l 68963
+如果存在死锁则会有如下输出：
+
+Found one Java-level deadlock:
+=============================
+"mythread2":
+  waiting for ownable synchronizer 0x000000076aea4848, (a java.util.concurrent.locks.ReentrantLock$NonfairSync),
+  which is held by "mythread1"
+"mythread1":
+  waiting for ownable synchronizer 0x000000076aea4878, (a java.util.concurrent.locks.ReentrantLock$NonfairSync),
+  which is held by "mythread2"
+
+Java stack information for the threads listed above:
+===================================================
+Found 1 deadlock.
+
+jstack -l 68963
+输出信息
+2023-10-29 15:01:17
+Full thread dump Java HotSpot(TM) 64-Bit Server VM (25.291-b10 mixed mode):
+
+"HikariPool-1 housekeeper" #76 daemon prio=5 os_prio=31 tid=0x00007f9d127d4000 nid=0xbc0f waiting on condition [0x0000000309a81000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+        at sun.misc.Unsafe.park(Native Method)
+        - parking to wait for  <0x00000006c4dd64f8> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+        at java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:215)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos(AbstractQueuedSynchronizer.java:2078)
+        at java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:1093)
+        at java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:809)
+        at java.util.concurrent.ThreadPoolExecutor.getTask(ThreadPoolExecutor.java:1074)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1134)
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+        at java.lang.Thread.run(Thread.java:748)
+
+   Locked ownable synchronizers:
+        - None
+
+"DestroyJavaVM" #65 prio=5 os_prio=31 tid=0x00007f9d1238d800 nid=0x1303 waiting on condition [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+   Locked ownable synchronizers:
+        - None
+
+"http-nio-7001-Acceptor" #63 daemon prio=5 os_prio=31 tid=0x00007f9d1279f800 nid=0xb503 runnable [0x0000000309675000]
+   java.lang.Thread.State: RUNNABLE
+        at sun.nio.ch.ServerSocketChannelImpl.accept0(Native Method)
+        at sun.nio.ch.ServerSocketChannelImpl.accept(ServerSocketChannelImpl.java:424)
+        at sun.nio.ch.ServerSocketChannelImpl.accept(ServerSocketChannelImpl.java:252)
+        - locked <0x00000006c4ddb118> (a java.lang.Object)
+        at org.apache.tomcat.util.net.NioEndpoint.serverSocketAccept(NioEndpoint.java:574)
+        at org.apache.tomcat.util.net.NioEndpoint.serverSocketAccept(NioEndpoint.java:80)
+        at org.apache.tomcat.util.net.Acceptor.run(Acceptor.java:106)
+        at java.lang.Thread.run(Thread.java:748)
+
+   Locked ownable synchronizers:
+        - None
+
+### jcmd 是以上工具（除jstat）的合集
+jcmd -l 查看jvm进程信息
+jcmd 16593 GC.heap_info 查看堆及元数据信息
+jcmd 16593 VM.uptime 查看jvm已启动的时长
+
+### eclipse MAT 对jmap dump出来的二进制快照进行解析
 
 ### 10. arthas 阿里开源的jvm调优工具
 
@@ -610,6 +747,10 @@ public class TestTryCatch2 {
 * 链接：与加载交替运行
   * 验证：验证类是否符合jvm规范，安全性检查
   * 准备：为static变量分配空间，设置默认值（与class对象存储在一起，存储在堆中），static变量是在初始化阶段进行赋值，而static final变量的基本类型（不是通过new方式进行创建）即常量会在准备进行赋值
+    准备阶段做的工作如下：
+      * 为类中的静态变量分配空间并设置默认的初始值
+      * 为引用变量分配空间
+      * 为常量（final static）分配初始值，并进行赋值 
  ```java
 static int a = 10;//准备阶段仅分配空间
 final static int b = 20; //准备阶段分配空间并赋值
@@ -936,6 +1077,7 @@ happends before不表示指令执行的先后顺序，只要对最终的结果�
 * 线程1打断（interrupt）线程2前对变量的写对于其他线程得知线程2被打断后的变量的读可见
 * 对变量默认值的写对其他线线程对该变量的读可见
 * 传递性，volatile变量写入，写屏障会将写屏障之间的所有操作都同步到主存（即使写屏障之前的某个变量不是volatile变量）
+
 
 **CAS与原子类**
 * 乐观锁
@@ -1432,68 +1574,7 @@ jmap -dump -F  -dump 选项不响应时，强制生成dump快照
 jmap -dump:live,format=b,file=/home/myheapdump.hprof 68963
 生成堆的dump文件
 
-**jstack jvm线程信息监控**
-查看线程信息，生成线程快照
-jstack -F 68963 正常输出的请求不被响应时，强制输出线程堆栈
-jstack -l 除堆栈外，会打印出额外的锁信息，在发生死锁时可以用jstack -l pid来观察锁持有情况 
-jstack -m 如果调用到本地方法，可现实c/c++堆栈
 
-jstack -l 68963
-如果存在死锁则会有如下输出：
-
-Found one Java-level deadlock:
-=============================
-"mythread2":
-  waiting for ownable synchronizer 0x000000076aea4848, (a java.util.concurrent.locks.ReentrantLock$NonfairSync),
-  which is held by "mythread1"
-"mythread1":
-  waiting for ownable synchronizer 0x000000076aea4878, (a java.util.concurrent.locks.ReentrantLock$NonfairSync),
-  which is held by "mythread2"
-
-Java stack information for the threads listed above:
-===================================================
-Found 1 deadlock.
-
-jstack -l 68963
-输出信息
-2023-10-29 15:01:17
-Full thread dump Java HotSpot(TM) 64-Bit Server VM (25.291-b10 mixed mode):
-
-"HikariPool-1 housekeeper" #76 daemon prio=5 os_prio=31 tid=0x00007f9d127d4000 nid=0xbc0f waiting on condition [0x0000000309a81000]
-   java.lang.Thread.State: TIMED_WAITING (parking)
-        at sun.misc.Unsafe.park(Native Method)
-        - parking to wait for  <0x00000006c4dd64f8> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
-        at java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:215)
-        at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos(AbstractQueuedSynchronizer.java:2078)
-        at java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:1093)
-        at java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:809)
-        at java.util.concurrent.ThreadPoolExecutor.getTask(ThreadPoolExecutor.java:1074)
-        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1134)
-        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
-        at java.lang.Thread.run(Thread.java:748)
-
-   Locked ownable synchronizers:
-        - None
-
-"DestroyJavaVM" #65 prio=5 os_prio=31 tid=0x00007f9d1238d800 nid=0x1303 waiting on condition [0x0000000000000000]
-   java.lang.Thread.State: RUNNABLE
-
-   Locked ownable synchronizers:
-        - None
-
-"http-nio-7001-Acceptor" #63 daemon prio=5 os_prio=31 tid=0x00007f9d1279f800 nid=0xb503 runnable [0x0000000309675000]
-   java.lang.Thread.State: RUNNABLE
-        at sun.nio.ch.ServerSocketChannelImpl.accept0(Native Method)
-        at sun.nio.ch.ServerSocketChannelImpl.accept(ServerSocketChannelImpl.java:424)
-        at sun.nio.ch.ServerSocketChannelImpl.accept(ServerSocketChannelImpl.java:252)
-        - locked <0x00000006c4ddb118> (a java.lang.Object)
-        at org.apache.tomcat.util.net.NioEndpoint.serverSocketAccept(NioEndpoint.java:574)
-        at org.apache.tomcat.util.net.NioEndpoint.serverSocketAccept(NioEndpoint.java:80)
-        at org.apache.tomcat.util.net.Acceptor.run(Acceptor.java:106)
-        at java.lang.Thread.run(Thread.java:748)
-
-   Locked ownable synchronizers:
-        - None
 
 **jhat 分析jvm堆快照工具**
 使用jmap -dump生成内存快照文件后，可以使用jhat将dump文件转成html形式，然后通过在浏览器中查看堆的情况
@@ -1530,3 +1611,25 @@ jhat会启动一个http服务，端口号是7000
 * ps H -eo pid,tid,%cpu|grep pid 进一步定位哪个线程引起cpu占用过高
 * 使用jstack pid 查看线程详情，根据线程id找到有问题的线程，（可能是死锁，可能是死循环等问题），定位到线程行数
 * 可以使用jstack检测进程中出现的死锁
+
+### jvm调优
+优化的方向：
+* 减少垃圾回收的时间，尽量避免full gc
+* 对于并发量高的应用，应该减少单次垃圾回收的用户线程停顿时间，选择低延迟的垃圾回收器（CMS（Concurrent Mark-Sweep）和G1（Garbage-First））
+* 对于吞吐量高的应用，应该减少单位时间内的垃圾回收的停顿时间，选择吞吐量有限的垃圾回收器（Parallel GC）
+
+触发fullgc的几个条件：
+1. minor gc之后，老年代没有足够的空间来存放晋升老年代的对象，会触发full gc
+2. 显示调用了system.gc()
+3. 元空间不足
+元空间是存放 类元信息、方法元信息、常量池（包括运行时常量池、字符串常量池、类文件常量池，字符串常量池在堆中，运行时常量池在元空间中），使用系统的直接内存，会在jvm运行过程中动态调整大小
+元空间的设置参数：
+-XX:MetaspaceSize  设置元空间初始大小，当占用率达到该值会触发full gc垃圾回收进行类型卸载，
+-XX：MaxMetaspaceSize 元空间最大值，默认无限制
+-XX：MinMetaspaceFreeRatio gc之后，元空间剩余容量百分比
+-XX:MaxMetaspaceFreeRatio gc之后，元空间最大剩余容量百分比，这两个参数是为了动态调整元空间大小减少垃圾回收时间
+
+
+
+
+

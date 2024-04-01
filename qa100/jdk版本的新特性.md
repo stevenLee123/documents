@@ -1,7 +1,5 @@
 ## jdk8的新特性
 
-
-
 在 JDK 8（Java Development Kit 8）中引入了许多新特性和改进，以下是其中一些主要的新特性：
 
 ### Lambda 表达式： 

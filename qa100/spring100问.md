@@ -1,4 +1,7 @@
-# spring 100问
+# spring 
+## spring知识梳理
+* spring中用到的设计模式（简单工厂模式、工厂方法模式、代理模式、观察者模式（事件监听）、责任链模式、适配器模式（HandlerAdapter）、策略模式）
+
 ## 1. spring是什么
 spring是一个java开发的生态体系，包含spring framework，springboot等一系列开发框架其主要目的是简化开发，实现代码的解耦
 
@@ -426,12 +429,13 @@ bean生命周期总结：
 2. bean的构造器执行
 3. 实现InstantiationAwareBeanPostProcessor接口，执行postProcessAfterInstantiation方法，返回true，则会继续进行依赖注入，如果返回false，则会跳过依赖注入
 4. 实现InstantiationAwareBeanPostProcessor接口，执行postProcessProperties方法，在依赖注入之前执行
-5. 实现BeanPostProcessor接口，在初始化之前执行postProcessBeforeInitialization方法，其中判断bean是否实现了XXXAware接口，实现了aware接口调用对应的aware接口
-6. 实现InitializingBean接口，在依赖注入阶段之后执行初始化方法执行afterPropertiesSet
-7. 使用@PostConstruct标注方法，在afterPropertiesSet方法执行之后执行
-8. 实现InitializingBean接口，在初始化之后执行postProcessAfterInitialization方法，这里可能替换掉原油的bean，如进行代理增强
-9. 实现DestructionAwareBeanPostProcessor接口，在销毁之前执行postProcessBeforeDestruction方法
-10. 实现DisposableBean接口，销毁时执行destroy方法（或是在方法上标注@PreDestroy，销毁时执行标注方法）
+5. 进行依赖注入
+6. 实现BeanPostProcessor接口，在初始化之前执行postProcessBeforeInitialization方法，其中判断bean是否实现了XXXAware接口，实现了aware接口调用对应的aware接口
+7. 实现InitializingBean接口，在依赖注入阶段之后执行初始化方法执行afterPropertiesSet
+8. 使用@PostConstruct标注方法，在afterPropertiesSet方法执行之后执行
+9. 实现BeanPostProcessor接口，在初始化之后执行postProcessAfterInitialization方法，这里可能替换掉原有的bean，如进行代理增强（aop的动态代理增强是通过AnnotationAwareAspectJAutoProxyCreator 这个BeanPostProcessor来实现的，主要方法入口wrapIfNecessary）
+10. 实现DestructionAwareBeanPostProcessor接口，在销毁之前执行postProcessBeforeDestruction方法
+11. 实现DisposableBean接口，销毁时执行destroy方法（或是在方法上标注@PreDestroy，销毁时执行标注方法）
 ### 模板方法模式 --在bean生命周期阶段使用的设计模式
 固定不变的步骤采用具体的方法实现，对与具体的步骤进行抽象，由子类来实现
 BeanPostProcessor 调用的原理
@@ -2927,6 +2931,10 @@ spring异步方法的使用：
 ### BeanPostProcessor的注册方式
 1. 直接作为普通的bean注入，spring会自动将BeanPostProcessor优先加载到容器中(注意如果使用java配置类的方式以@Bean的方式注入，那么方法返回的类型必须是BeanPostProcessor类型或其子类型)
 2. 使用ConfigurableBeanFactory接口的addBeanPostProcessor方法添加
+
+### spring 的定时任务与XXLJob的差别
+xxljob 是一个分布式的任务调度平台，分为调度调度中心和执行器
+spring schedule 是单应用的定时任务调度
 
 
 

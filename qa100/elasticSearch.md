@@ -1,6 +1,8 @@
 # ES
 * ElasticSearch 是一个基于lucene搜索服务器
 * lucene是一套基于java的搜索api
+* 分布式搜索引擎
+* 大数据搜索引擎
 * es是对lucene封装实现
 * solr是与es都是lucene的实现
 * 基于restful的web接口，通过http可实现es的操作
@@ -8,6 +10,10 @@
 > es 通过分词提高了查询的效率，关系型数据库的查询性能比es差很多
 > mysql 查询功能弱，模糊查询会导致全表扫描
 > es不具有事务性，没有外键，不能像mysql一样保证数据的安全性
+> ES 提供大量数据的搜索和聚合功能
+
+## 安装与启动
+
 
 ## 倒排索引的概念
 * 倒排索引：将一段文本按照一定的规则拆分成不同的词条（term），记录词条和文本之间的关系
@@ -18,6 +24,12 @@ key（term） value
 月          床前明月光 /明月几时有 ---><静夜思>/<水调歌头>  将文本文唯一标识放入
 ....
 存储value时，将文本内容的唯一标识放在value中
+将文档中的单词拆分，记录单词、单词数量与单词在文档中位置之间的关系
+倒排索引项（POSTing list）：
+文档id
+词频 TF 单词出现的次数，用于相关性评分
+位置 POSITION
+偏移量 OFFSET 记录单词开始结束的位置，实现高亮显示
 
 使用场景：
 > 适合海量数据的查询
@@ -27,7 +39,7 @@ key（term） value
 
 ## 概念
 * index 索引
-es存储数据的地方
+es存储数据的地方,保存一个文档到es的过程
 一个索引类似于mysql的库
 生成的倒排索引中，词条会排序，形成一颗树形结构，提升词条查询速度
 
@@ -48,9 +60,9 @@ es7后逐渐淘汰了type
 ## elasticSearch操作
 ### 脚本操作es（restful）
 
-**索引操作**
+### 索引操作
 添加
-``` 
+```shell 
 curl --location --request PUT 'http://127.0.0.1:9200/goods_index' 
 ```
 ```
@@ -185,7 +197,7 @@ curl --location --request POST http://127.0.0.1:9200/goods_index2/_open
 }
 ```
 
-**mapping 操作**
+### mapping 操作
 #### 数据类型
 **简单数据类型**
 * 字符串 
@@ -337,7 +349,7 @@ GET person
   }
 }
 ```
-**操作文档**
+### 文档操作
 添加文档
 指定id方式
 ```
@@ -462,7 +474,8 @@ GET person/_search
 ```
 
 
-修改文档
+#### 修改文档
+指定id修改，默认的op_type为index，表示如果文档存在，则删除并重新创建文档
 ```json
 PUT person/_doc/2
 {
@@ -484,9 +497,17 @@ PUT person/_doc/2
   "_seq_no" : 3,
   "_primary_term" : 1
 }
+//文档已经存在的情况下会直接报错
+PUT person/_doc/1?op_type=create
+{
+  "name":"zhangsan",
+  "age":21,
+  "address":"beijing"
+}
 ```
 
-删除文档
+
+#### 删除文档
 ```json
 DELETE person/_doc/rlrcDocB0iSM-C068bkJ
 --结果
@@ -504,6 +525,17 @@ DELETE person/_doc/rlrcDocB0iSM-C068bkJ
   "_primary_term" : 1
 }
 ```
+
+### search 操作
+/_search 查询集群上所有的索引
+/person/_search 查询索引_search下的数据
+可使用的参数：
+q :指定查询语句
+df： 默认字段，如果不指定，会对所有字段进行查询
+sort：排序 /可以使用from、size来进行分页
+Profile :查看查询时如何被执行的
+
+
 
 ## 分词器analyzer 
 将一段文本，按照一定的逻辑，分析称多个词语的一种工具
@@ -866,6 +898,13 @@ GET person/_search
 }
 ```
 
+### 使用es进行聚合
+聚合的分类：
+* bucket aggreataion --一些满足特定条件的文档集合
+* metric aggregation -- 一些数学运算，可以对文档字段进行统计分析
+* pipeline aggregation -- 对其他的聚合进行结果的二次聚合
+* matrix aggregation --支持对多个字段的操作并提供一个结果矩阵
+
 ## java api
 
 ### 整合springboot
@@ -1041,8 +1080,8 @@ elastic:
 ```
 
 ### 高级操作
-**批量操作**
-bulk 将文档的增删改查的一系列操作通过一次请求完全做完，减少网络传输次数，bulk内部的各个操作相互之间不会干扰对方
+#### 批量操作
+_bulk api 将文档的增删改查的一系列操作通过一次请求完全做完，减少网络传输次数，bulk内部的各个操作相互之间不会干扰对方,返回结果中包含了各条操作的各自的执行结果
 ```shell
     POST _bulk
     {"delete":{"_index":"person","_id":"VKUVD4cBMCkLBtUeHUOM"}}
@@ -1129,7 +1168,9 @@ java代码bulk
         BulkResponse bulk = client.bulk(bulkReuquest, RequestOptions.DEFAULT);
         log.info("status:{}",bulk.status());
     }
-```    
+``` 
+_msearch api 一次执行多个查询，同时拿到结果
+
 
 **导入数据**
 将数据库中的数据导入es中
@@ -1814,4 +1855,14 @@ PUT person
 * jvm内存回收导致jvm大规模垃圾回收，造成es进程失去响应   --将jvm.options 配置改为服务器内存的一半
 节点中的数据量为奇数，避免脑裂
 
+
+## analysis、analyzer
+Analysis 分词，文本分析，将全文文本转换为一系列的单词的过程，分词的过程是通过analyzer来实现的
+analyzer 分词器
+处理分词的组件
+character Filters
+toknizer
+token filter
+
+分词器相关的api  _analyze
 

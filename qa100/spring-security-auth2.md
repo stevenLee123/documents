@@ -40,7 +40,8 @@ spring security是一个完整的用户登录认证、授权框架，可以根�
 * 注解级别方法支持 ： 在@Configuration支持的注册类上打开注解@EnableGlobalMethodSecurity(prePostEnabled = true,securedEnabled = true,jsr250Enabled = true)即可支持方法及的注解支持。prePostEnabled属性 对应@PreAuthorize。securedEnabled 属性支持@Secured注解，支持角色级别的权限控制。jsr250Enabled属性对应@RolesAllowed注解，等价于@Secured。
 
 ### 工作原理
-在初始化spring security时会在WebSecurityConfiguration 中注入一个名为SpringSecurityFilterChain过滤器，类型为FilterChainProxy。
+spring mvc提供了一个DelegatingFilterProxy的类用来将servlet中的filter放入spring容器中进行管，
+在初始化spring security时会在WebSecurityConfiguration 中注入一个名为springSecurityFilterChain过滤器，类型为FilterChainProxy。
 FilterChainProxy是一个代理，其中包含了多个SecurityFilterChain的list，SecurityFilterChain中又包含了很多filter，这些filter是spring security的核心，各有各的职责，他们不直接处理认证和授权，会交给具体的认证管理器（AuthentationManager）和决策管理器（AccessDecisionManager）处理
 
 ### 一些比较重要的filter
@@ -87,29 +88,69 @@ ExceptionTranslationFilter 捕获来自FilterChain所有的异常，并进行处
 关于AccessDecisionManager接口，最核心的就是其中的decide方法。这个方法就是用来鉴定当前用户是否有访问对应受保护资源的权限。
 
 
-授权的配置方式：
-**通过HttpSecurity 配置URL的授权信息**
+
+
+#### 授权的配置方式：
+#### **通过HttpSecurity 配置URL的授权信息**
 authenticated() 保护URL，需要用户登录
 permitAll() 指定URL无需保护，一般应用与静态资源文件
-hasRole(String role) 限制单个角色访问。角色其实相当于一个"ROLE_"+role的资源。
-hasAuthority(String authority) 限制单个权限访问
+hasRole(String role) 限制单个角色访问。角色其实相当于一个"ROLE_"+role的资源，角色在处理之后自动带上了ROLE_的前缀，实际上也是被当成了Authority授权许可
+hasAuthority(String authority) 限制单个权限访问，
 hasAnyRole(String… roles)允许多个角色访问. 
 hasAnyAuthority(String… authorities) 允许多个权限访问. 
 access(String attribute) 该方法使用 SpEL表达式, 所以可以创建复杂的限制. 
 hasIpAddress(String ipaddressExpression) 限制IP地址或子网
 
-**通过注解的方式进行授权**
+
+### **方法授权：通过注解的方式进行授权**
 在启动类上标注@EnableGlobalMethodSecurity(securedEnabled=true) 注解，开启 @Secured注解过滤权限
 @EnableGlobalMethodSecurity(jsr250Enabled=true)	开启@RolesAllowed 注解过滤权限
 @EnableGlobalMethodSecurity(prePostEnabled=true) 使用表达式实现方法级别的安全性，打开后可以使用以下几个注解：
     @PreAuthorize 在方法调用之前,基于表达式的计算结果来限制对方法的访问。例如@PreAuthorize("hasRole('normal') AND hasRole('admin')")
-    @PostAuthorize 允许方法调用,但是如果表达式计算结果为false,将抛出一个安全性异常。此注释支持使用returnObject来表示返回的对象。例如@PostAuthorize(" returnObject!=null &&  returnObject.username == authentication.name")
+    可以结合@P标签注解来读取方法中的参数：
+
+```java
+@PreAuthorize("#userId == authentication.principal.userId or hasAuthority(‘ADMIN’)")
+void changePassword(@P("userId") long userId ){}
+```
+
+    @PostAuthorize 允许方法调用,但是如果表达式计算结果为false,将抛出一个安全性异常。此注释支持使用returnObject来表示返回的对象。例如
+```java
+    @PostAuthorize(" returnObject!=null &&  returnObject.username == authentication.name")
+```
+
     @PostFilter 允许方法调用,但必须按照表达式来过滤方法的结果
-    @PreFilter 允许方法调用,但必须在进入方法之前过滤输入值
+```java
+@PostFilter("filterObject != authentication.principal.username")
+public List<String> getAllUsernamesExceptCurrent() {
+    return userRoleRepository.getAllUsernames();
+}
+```
+结果中包含当前访问用户名时，移除
+
+    @PreFilter 允许方法调用,但必须在进入方法之前过滤输入值,对输入参数进行过滤
+  ```java
+    @PreFilter("filterObject != authentication.principal.username")
+public String joinUsernames(List<String> usernames) {
+    return usernames.stream().collect(Collectors.joining(";"));
+}
+  ```
+当usernames中的子项与当前登录用户的用户名不同时，则保留；当usernames中的子项与当前登录用户的用户名相同时，则移除。
+比如当前使用用户的用户名为zhangsan，此时usernames的值为{"zhangsan", "lisi", "wangwu"}，则经@PreFilter过滤后，实际传入的usernames的值为{"lisi", "wangwu"}
+
+
 用户登录信息的获取    
 可以通过为SecurityContextHolder.getContext().getAuthentication()获取当前登录用户信息
 
-在需要权限管理的方法上使用@Secured(Resource) 方式配合权限
+在需要权限管理的方法上使用@Secured(Resource) 方式配合权限，规定了访问访方法的角色列表，在列表中最少指定一种角色,指定多个时，当用户拥有列表中任意一种角色是可以访问方法
+
+在spring security6中@EnableGlobalMethodSecurity注解已经被弃用，使用@EnableMethodSecurity来开启方法授权
+
+#### 使用方法注解时需要注意的问题
+默认情况下，在方法中使用安全注解是由Spring AOP代理实现的，这意味着：如果我们在方法1中去调用同类中的使用安全注解的方法2，则方法2上的安全注解将失效。
+
+Spring Security上下文是线程绑定的，这意味着：安全上下文将不会传递给子线程。
+
 
 ## 分布式系统认证方案
 分布式认证系统需要实现以下的功能：
@@ -126,7 +167,7 @@ session机制依赖于cookie，客户端需要保存sessionId，而不是所有�
 由于token中包含大量的信息，数据量较大，每次请求都需要传递，会占用额外的带宽，token的签名延签操作也会给系统带来额外的负担
 
 ### oauth2.0协议
-角色：
+#### 角色：
 1、客户端 - 示例中的浏览器、微信客户端
 本身不存储资源，需要通过资源拥有者的授权去请求资源服务器的资源。
 2、资源拥有者 - 示例中的用户(拥有微信账号)

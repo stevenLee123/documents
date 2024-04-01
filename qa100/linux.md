@@ -313,9 +313,76 @@ linux 硬盘分为IDE和SCSI硬盘，目前基本上是SCSI硬盘
 ide硬盘标识为hdx～ ，sda 表示一块硬盘、sda1，sda2 标识磁盘的两个分区
 scsi硬盘的标识为sdx～
 
-lsblk -f查看磁盘的分区情况
+## lsblk -f查看磁盘的分区情况
+## 磁盘分区并挂载
+fdisk /dev/sdb
+再输入n
+选择主分区（p）或者扩展分区(e)
+选分区号1
+输入w保存并退出
+mkfs -t ext4 /dev/sdb1 对sdb1分区进行格式化
+使用lsblk -f 查看磁盘分区情况及磁盘挂载情况
 
-## 在linux下增加一块硬盘
+mkdir newdisk 创建文件夹
+mount /dev/sdb1 /newdisk 挂载分区到目录
+
+## 卸载磁盘
+umount /dev/sdb1 卸载磁盘文件
+或
+umount /newdisk 卸载挂载目录
+
+**使用命令行挂载的方式重启系统后挂载会失效**
+
+## 永久挂载
+修改/etc/fstab文件添加要挂载的磁盘分区及挂载点
+
+## 查询磁盘情况
+df -h 查看磁盘使用情况，挂载点
+du -ha /newdisk --max-depth=1 查询指定路径的磁盘占用情况
+
+## 统计目录下文件个数
+ls -l .|grep "^-" |wc -l
+## 统计目录及子目录下的文件个数
+ls -lR .|grep "^-" |wc -l
+## 树状显示目录结构
+tree .
+
+## 设置host映射
+hostname 返回主机名称
+修改/etc/hosts文件，添加ip与主机名的映射关系
+
+# 进程管理
+## 查看进程信息
+ps -aux|more
+
+## 以全格式显示当前所有进程
+ps -ef   -f 全格式   -e 显示所有进程
+
+ps -aux|grep sshd 查看通过sshd登陆到当前主机的用户进程信息
+
+## pstree 
+树状结构显示
+
+## service 管理
+服务的本质是进程，运行在后台的服务通常都会监听某个端口，等待其他程序的请求
+在centos7之后service不在使用（service命令管理的服务在/etc/init.d下），而是使用systemctl命令
+service start｜stop｜restart｜reload｜status mysqld
+
+## chkconfig 给服务的各个运行级别设置自启动/关闭
+chkconfig命令管理的服务在/etc/init.d下
+chkconfig --list 查看课管理的服务列表
+chkconfig --level 5 network off
+chkconfig --level 3 network on
+
+## systemctl管理命令
+systemctl [start|stop|restart|status] 服务名
+systemctl指令管理的服务在/usr/lib/systemd/system下
+systemctl enable mysqld 设置mysqld 自启动
+systemctl disable mysqld 设置mysqld 非自启动
+systemctl is-enable mysqld 查看服务是否自启动
+systemctl list-unit-files|grep 查看服务开机自启动状态
+
+netstat -aut
 
 
 ## kill 命令
@@ -325,6 +392,8 @@ kill pid 杀死进程
 kill -KILL pid 强制杀死进程
 kill -HUP pid 发送sigHUB 信号
 kill -9 pid 彻底杀死进程
+
+killall  杀死进程及子进程
 
 # 压缩解压命令
 gzip helloworld.txt
@@ -342,6 +411,8 @@ tar
 
 tar -zcvf test.tar.gz helloworld.txt 将helloworld.txt压缩成test.tar.gz
 tar -zxvf test.tar.gz 解压文件
+tar -zxvf test.tar.gz -C /ouput 解压文件，并制定解压目录
+
 ## 文档编辑命令
 
 ## 文件传输命令
@@ -351,6 +422,45 @@ tar -zxvf test.tar.gz 解压文件
 ## 磁盘维护命令
 
 ## 网络通信命令
+
+### centos8下的防火墙设置
+* 查看防火墙状态
+systemctl status firewalld
+firewall-cmd --state
+* 查看已开放端口
+firewall-cmd --list-ports
+* 开启防火墙
+systemctl start firewalld
+* 开放端口
+firewall-cmd --zone=public --add-port=8800/tcp --permanent
+命令含义：
+--zone #作用域
+--add-port=8800/tcp #添加端口，格式为：端口/通讯协议
+--permanent #永久生效，没有此参数重启后失效
+* 重启防火墙
+firewall-cmd --reload
+
+## rpm （redhat package manager）
+rpm -qa |grep xxx 查询当前系统是否安装了某个软件
+rpm -q firefox 查看某个软件是否安装
+rpm -qi firefox 查看安装的软件包的信息
+rpm -ql firefox 查询软件包中的文件
+rpm -qf /etc/passwd 查询文件归属于哪个软件包
+
+rpm -e firefox 删除软件包（erase 擦除）
+rpm -e --nodeps firefox 强制删除，忽略依赖警告信息， no depedencies
+
+rpm -ivh firefox.rpm 安装某个软件 
+-i install
+-v verbose 提示
+-h hash 进度条
+
+## yum shell前端软件包管理器，基于rpm包管理
+yum list|grep xxx 查询yum服务器是否需有需要安装的软件
+yum install firefox 安装某个软件
+
+## source /etc/profile 让新的环境变量生效
+
 
 ## 系统管理命令
 
@@ -470,3 +580,21 @@ nc -lk 9999
 `which java`
 /Library/Java/JavaVirtualMachines/jdk1.8.0_291.jdk/Contents/Home/bin/java
 
+## free 查看系统内存使用情况
+              total        used        free      shared  buff/cache   available
+Mem:         792772      265232       82672       46828      444868      339988
+Swap:             0           0           0
+total 总物理内存大小
+used 已使用多少
+free 可用内存多少
+shared 多个进程共享的内存总额
+buffers/cached 磁盘缓存大小
+avaliable 估算的可用于启动新应用程序而不必使用交换空间的内存量
+
+free -b/--bytes 以字节为单位显示内存使用情况
+free -k/--kilo 以KB显示（默认情况）
+free -m/--mega 以MB显示
+free -g/--giga 以GB显示
+free -h/--human 以人类刻度格式显示
+free -t /--total 显示总计的内存使用情况
+free --si 使用1000而不是1024作为单位的转换因子
