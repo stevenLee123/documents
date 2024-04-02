@@ -5,6 +5,21 @@
 * springboot的启动流程
 * spring中bean的构建流程，bean的生命周期，bean的scope对应的含义，如何正确的在一个singleton的bean中正确的注入一个prototype的bean（使用@Lookup注解，注入ApplicationContext来通过容器获取bean）
 * @Lookup的实现原理（通过cglib动态代理从beanfactory中获取方法返回值需要的bean）
+* Spring AOP实现的原理、同一个AOP切面的不同增强的执行先后顺序（通过源码发现，增强的顺序是在比较器中确定的，按传入InstanceComparator的顺序来确定，也就是固定的，排序如下：Around、Before、After、AfterReturning、AfterThrowing，当同一个切面中出现相同类型的增强，使用的是方法名来进行比较排序的）
+* BeanFactory和ApplicationContext的区别，ApplicationContext对BeanFactory进行了哪些扩展
+* springboot的启动流程及启动原理
+* spring的事务管理原理（编程式事务的组件配置）以及事务的使用方式、事务的传播行为、事务的隔离级别
+  * spring的申明式事务使用的是AOP实现的，而AOP代理的方法不能式自身方法相互调用（无法代理这种方法调用）
+  * 编程式事务中使用了PlatformTransactionManager或TransactionTemplate来操作事务，具体的组件有：
+    * DataSource数据源定义
+    * DataSourceTransactionManager基于数据库连接池进行数据库的操作时使用该事务管理器，包含了事务的getTransaction、commit、rollback
+    * TransactionDefinition 定义事务的传播行为、隔离级别等特性
+    * TransactionStatus事务的状态定义
+  * 使用PlatformTransactionManager 需要在业务代码中手动的getTransaction、commit、rollback
+  * 使用TransactionTempalte可以通过回调的方式进行事务的执行
+  * 使用申明式事务可以在方法中通过@Transactional注解去指定事务的详细信息
+  * spring的@Transactional注解默认情况下的rollbaockFor只能支持RunTimeException和Error，且只能支持public方法，不支持private、prtected方法
+  
 
 ## 1. spring是什么
 spring是一个java开发的生态体系，包含spring framework，springboot等一系列开发框架其主要目的是简化开发，实现代码的解耦
@@ -1618,6 +1633,15 @@ Spring框架的事务管理是通过AOP（面向切面编程）机制实现的�
 
 * 事务隔离级别和传播行为：Spring允许你指定事务的隔离级别和传播行为。事务隔离级别定义了多个事务同时运行时的隔离程度，而传播行为定义了方法如何参与到现有的事务中。
 * 数据库连接和连接管理：Spring事务管理使用数据库连接来执行事务操作。事务管理器负责管理连接的获取、释放以及在事务完成后的提交或回滚。
+* spring的多数据源的事务支持，spring的AbstractRoutingDataSource实现了多数据源切换的功能，spring的事务也支持在事务中进行多数据源的操作
+* spring事务的传播行为
+  * required 默认情况，如果有事务则，加入该事务，如果没有事务，则开启一个新的事务
+  * supports 当前存在事务，则加入当前事务，如果没有事务，则以非事务方式执行
+  * mandatory 当前存在事务则加入当前事务，如果不存在事务，则抛出异常
+  * requires_new 创建一个新的事务，如果已经存在事务，将已存在事务挂起
+  * not_supported 以非事务方式执行，如果当前存在事务，则挂起当前事务
+  * never 不实用事务，如果当前事务存在，则抛出异常
+  * nested，如果当前事务存在，则在嵌套事务中执行（当被调用方事务出现异常时，可以在调用方中进行catch，只有子事务会回滚），否则和required的操作一样
 ## springmvc
 ### dispatchServlet 初始化时机
 

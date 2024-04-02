@@ -85,8 +85,7 @@ ExceptionTranslationFilter 捕获来自FilterChain所有的异常，并进行处
 1、拦截请求，已认证用户访问受保护的web资源将被SecurityFilterChain中(实现类为DefaultSecurityFilterChain)的 FilterSecurityInterceptor 的子类拦截。
 2、获取资源访问策略，FilterSecurityInterceptor会从 SecurityMetadataSource 的子类DefaultFilterInvocationSecurityMetadataSource 获取要访问当前资源所需要的权限Collection 
 3、FilterSecurityInterceptor会调用 AccessDecisionManager 进行授权决策，若决策通过，则允许访问资源，否则将禁止访问。
-关于AccessDecisionManager接口，最核心的就是其中的decide方法。这个方法就是用来鉴定当前用户是否有访问对应受保护资源的权限。
-
+关于AccessDecisionManager接口，最核心的就是其中的decision方法。这个方法就是用来鉴定当前用户是否有访问对应受保护资源的权限。
 
 
 
