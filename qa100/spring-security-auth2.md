@@ -193,7 +193,7 @@ userDetails(user_id)：授权用户标识。在示例中代表用户的微信号
 oauth2.0 包含两个服务：
 授权服务（Authorization server，也叫认证服务）
 资源服务（resource server） 
-一般在部署时可以在同一个应用中实现这两个服务，
+一般在部署时可以在同一个应用中实现这两个服务
 
 授权服务包含对接入端、登入用户的合法性进行验证并颁发token等功能，对令牌的请求断点由spring mvx控制器实现：
 默认接口：
@@ -318,6 +318,7 @@ authorizeRequests()方法验证请求。antMatchers方法匹配访问路径。ac
 
 ### jwt令牌
 JWT （JSON Web Token）是一个开放的行业标准，定义了一种简单的、子包含的协议格式，用于在通信双方传递json对象，传递的信息经过数据签名可以被验证和信任，JWT可以使用RSA算法的公私钥来签名
+由三部分组成：头部（Header）、载荷（Payload）和签名（Signature）。头部包含了关于令牌的元数据，如算法和令牌类型。载荷包含了要传输的信息，如用户ID、权限等。签名是使用私钥对头部和载荷进行加密生成的，用于验证令牌的真实性。这三部分通过点号连接在一起，形成一个JWT令牌。
 **令牌结构**
 Header.Payload.Signature
 header

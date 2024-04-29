@@ -5,9 +5,17 @@
 nonblock io
 使用selector监听socket连接，不需要为每个socket连接创建一个新的线程
 ### 三个组件
-buffer -- ByteBuffer、CharBuffer、IntegerBuffer等，flip（）切换为读模式，clear（）切换为写模式，compact（）进行压缩，将已读数据压缩掉
+buffer -- ByteBuffer、CharBuffer、IntegerBuffer等，
+flip（）切换为读模式，
+clear（）切换为写模式，
+compact（）进行压缩，将已读数据压缩掉
 Channel -- FileChannel
 Selector --选择器
+
+## 文件复制的几种方式
+1. 通过FileInputStream、FileOutputStream进行文件复制，这种方式速度较慢
+2. 使用java.nio的Channel的transferTo/transferFrom实现
+3. 使用Files.copy()实现拷贝
 
 ### 文件工具类
 Path 路径类，可用来创建文件 
@@ -23,6 +31,9 @@ Files.walkFileTree(...)
 //通过walk方法遍历目录文件，结合FileChannel、ByteBuffer，可以实现多级文件目录的拷贝
 Files.walk(Path).forEach(path ->{});
 ```
+
+
+
 ### nio阻塞模式
 单线程无法在阻塞模式下处理多个客户端的连接，一个客户端的操作会影响另一个客户端的操作
 ```java

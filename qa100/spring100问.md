@@ -753,7 +753,7 @@ Aware实现注入一些与容器相关的信息
 
 
 ## InitializingBean接口
-实现bean的初始化功能
+实现bean的初始化功能,初始化是spring bean生命周期中的一个流程，在bean的属性注入之后，调用具体的初始化方法
 
 **aware接口的方法先执行，InitializingBean接口的方法后执行**
 **Aware、InitializingBean属于spring的内置功能，而@PostConstruct、@Autowired等注解都属于spring的扩展功能，需要使用spring的bean的后置处理器，扩展功能可能在某些情况下（后置处理器缺失）可能会失效**
@@ -2143,18 +2143,19 @@ IoC加载的过程可以从Bean的生命周期的角度来看
 2. 拿到包下的所有的class文件
 3. 使用反射根据条件推断需要使用的类构造器，生成bean的实例
 4. 使用反射对标注了Autowired的属性进行依赖注入(通过beanPostProcessor实现)
-5. 判断类的方法中是否有标注了PostConstruct注解，如果有，利用反射调用标注了PostConstruct的方法（初始化前的方法），或是判断类是否实现了BeanPostProcessor，如果实现了，则调用processor的postProcessBeforeInitialization方法（实际上PostConstruct也是使用BeanPostProcessor实现的）
-6. 判断bean是否实现了InitializingBean接口，如果实现了，就调用afterPropertiesSet()方法进行初始化
-7. 判断bean是否实现了BeanPostProcessor接口，有就调用postProcessAfterInitialization方法（初始化后）
-8. 判断bean是否实现了各种aware接口，如果实现了，就调用相应的aware接口中的方法（一般是用于将容器中的资源直接给到bean方便bean的操作）
-9. 判断Bean是否配置了AOP拦截，有则使用jdk代理或cglib实现代理
-10. 将bean放入singletonBeanMap（单例池中）
-11. 判断类的方法中是否有标注了PreDestroy注解的方法，有就利用反射调用标注了@PreDestroy的方法
+5. 判断类的方法中是否有标注了PostConstruct注解，如果有，利用反射调用标注了PostConstruct的方法（初始化前的方法）
+6. 判断类是否实现了BeanPostProcessor，如果实现了，则调用processor的postProcessBeforeInitialization方法（实际上@PostConstruct也是使用BeanPostProcessor实现的）
+7. 判断bean是否实现了各种aware接口，如果实现了，就调用相应的aware接口中的方法（一般是用于将容器中的资源直接给到bean方便bean的操作）
+8. 判断bean是否实现了InitializingBean接口，如果实现了，就调用afterPropertiesSet()方法进行初始化
+9. 判断bean是否实现了BeanPostProcessor接口，有就调用postProcessAfterInitialization方法（初始化后）
+10. 判断Bean是否配置了AOP拦截，有则使用jdk代理或cglib实现代理
+11. 将bean放入singletonBeanMap（单例池中）
+12. 判断类的方法中是否有标注了PreDestroy注解的方法，有就利用反射调用标注了@PreDestroy的方法
 
 ## 15. spring 循环依赖中的三级缓存
 1. 一级缓存： singletonObjects，存储已经完全初始化好，经历了完整的bean创建生命周期的bean，可以直接取出来使用
 2. 二级缓存：earlySingletonObjects，存储刚刚实例化但还未进行属性注入的bean，或是需要bean需要aop时，进行提前aop后的aop代理对象
-3. 三级缓存： singletonFactories，存储被ObjectFactory包装的刚刚进行实例化且还未进行属性注入的bean对象，存放要被代理的对象
+3. 三级缓存： singletonFactories，存储被ObjectFactory包装的刚刚进行实例化且还未进行属性注入的bean对象，存放要被代理的对象，三级缓存主要是解决AOP生成代理对象的问题
 解决循环依赖的核心思想：找到能打破循环依赖的点
 
 spring 无法解决的循环依赖：
@@ -2164,7 +2165,7 @@ spring 无法解决的循环依赖：
 4. 设置@DenependsOn注解的无法解决循环依赖
 
 
-三级缓存的解决循环依赖
+## 三级缓存的解决循环依赖
 如果AS、 BS两个bean相互通过Autowired依赖，创建时的流程如下：
 
 标记AS为正在创建中，反射创建其实例，其对象工厂放入第三层缓存
@@ -2251,8 +2252,8 @@ run方法的执行：
 7.  打印banner信息
 8.  创建spring 的上下文ApplicationContext（通过反射实现）
 9.  预初始化上下文（环境变量Envoriment的设置）
-10. 获取当前spring上下问的BeanFactory，解析main方法对应类（启动类）上的注解信息
-11. refreshContext加载spring的IOC容器（spring的配置类都是通过invokeBeanFacotoryPostProcessors这个方法去执行的），这一步时spring 容器启动最关键的一步，加载所有的自动配置类，创建servlet容器
+10. 获取当前spring上下文的BeanFactory，解析main方法对应类（启动类）上的注解信息
+11. refreshContext加载spring的IOC容器（spring的配置类都是通过invokeBeanFacotoryPostProcessors这个方法去执行的），这一步是spring 容器启动最关键的一步，加载所有的自动配置类，创建servlet容器
 12. 记录springboot启动结束时间
 
 spring容器refresh方法中做的工作
@@ -2295,7 +2296,7 @@ refresh方法的实现是在AbstractApplicationContext中
 				initApplicationEventMulticaster();
 
 				// Initialize other special beans in specific context subclasses.
-        //子类充血这个方法，在容器刷新时可以自定义逻辑
+        //子类重写这个方法，在容器刷新时可以自定义逻辑
 				onRefresh();
 
 				// Check for listener beans and register them.
@@ -2343,7 +2344,7 @@ refresh方法的实现是在AbstractApplicationContext中
 3. 使用@ConfigurationProperties标志在配置文件中配置的属性，使用@EnableConfigurationProperties来启用配置属性
 4. 使用各种@Conditional的变种注解实现对配置类或配置组件是否生效的控制
 
-以上 @Configuration、@Import、@ImportResource等都是通过ConfigurationClassPostProcessor这个工厂后置处理器来实现
+以上 @Configuration、@Import、@ImportResource等都是通过`ConfigurationClassPostProcessor`这个工厂后置处理器来实现
 
 
 ## 23 springboot 启动web容器（tomcat的原理）
@@ -2393,7 +2394,7 @@ public class TestConfig {
 //    }
 }
 ```
-但是当两个bean的名称不同而类型不同时，如果没有在某个bean上指定@Primary，则会报错：
+但是当两个bean的名称不同而类型相同时，如果没有在某个bean上指定@Primary，则会报错：
 ```java
 @Configuration
 @ComponentScan(value = {"com.dxy.data.springtest.service"})

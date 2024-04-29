@@ -1,9 +1,10 @@
 # Kafka
 ## Kafka 知识点
+* kafka的基本概念，用途
 * kafka发送消息的两种模式
 * kafka如何保证消息的可靠性（生产者通过ack应答机制，消费者通过提交offset确认消费成功，生产者消费者broker三个方面考虑）
-* kafka如何保证消息的有序性（分区内有序，可以考虑设置同一类型的消息的key相同，将相同key的消息写入同一分区）
-* kafka如何保证消息不重复（通过幂等性）
+* kafka如何保证消息的有序性（分区内有序，可以考虑设置同一类型的消息的key相同，将相同key的消息写入同一分区，使用多级消息）
+* kafka如何保证消息不重复（通过幂等性和kafka的事务型producer）
 
 开源分布式事件流平台，用于高性能数据数据管道，流分析，数据集成和关键任务应用
 * 消息队列
@@ -22,6 +23,7 @@ kafka的特性：
 可扩展性：在无需停机的情况下实现轻松扩展
 消息持久性：kafka支持将消息持久化道本地磁盘
 高性能：发布订阅具有很高的吞吐量，存储TB级别的消息数据依然能保持稳定的性能
+数据以log日志的方式顺序存储在磁盘上
 
 ## 生产者消费者模型
 producer负责将消息放入队列
@@ -36,7 +38,7 @@ producer和comsumer使用java实现
 * 生产者消费者没有依赖性
 * 接收者在成功接收消息之后需向队列应答成功，以便队列删除当前消息
 发布订阅模式：
-* 一条消息可以被对多个订阅者接受
+* 一条消息可以被对多个订阅者接受，支持消息广播
 * 发布者和订阅者之间有时间上的依赖性，针对某个主题的订阅者，它必须创建一个订阅者之后，才能消费发布订阅者
 * 为了消费消息，订阅者需要提前订阅该角色主题，保持在线运行
 * 提供对消费者进行分组的功能，同一组的消费者并行消费，消费者消费不同的分区
@@ -192,7 +194,7 @@ hello world
 * producer：生产者
 * consumer：消费者
 * consumer group: 可扩展且具有容错性的消费者机制，一个消费者组具有唯一的id group.id
-* partition： 一个topic对应多个分区，将分区分布在不同的服务器上
+* partition： 一个topic对应多个分区，将分区分布在不同的服务器上,分区提供负载均衡的能力，实现系统的高伸缩性
 * replicas：分区的副本，分区副本也是放在不同的服务器上，用来容错
 * topic： 主题是一个逻辑概念，用于生产者发布数据，消费者拉取数据，一个主题中的消息是有结构的，一般一个主题包含一类消息，一旦一个消息发送到主题中，这些消息不能被更新
 * offset：偏移量，记录下一跳将要发送给comsumer的消息的序号，默认kafka将offset存储在zk中，在一个分区中，消息是有顺序存储着，每个分区的消费都是有一个递增的id，这就是偏移量offset，偏移量在分区中有意义，在分区之间没有意义
@@ -222,7 +224,8 @@ linger.ms  500 （ms），如果批次数据没有达到16K，而时间到了500
 sender（读取数据发送到broker）：最多缓存5个允许5个请求同时发送，允许未收到应答继续发送，最多容忍5次未收到ACK
 同步处理：所有发送任务必须全部完成之后才进行返回
 异步发送：允许用户把消息放入消息队列，并不立即处理它，然后再需要的时候再去处理（实际上是在分区器中进行的异步，消息还未到达broker）
-
+消息压缩：为提高消息传输效率，尽量节省网络带宽，可以在Producer端指定compression.type开启压缩，例如指定为gzip可以使用gzip压缩
+消息解压缩发生在consumer端或者broker端
 
 ### 分区器
 * 合理的使用存储资源，在每个Partition的broker上存储，把数据分布在broker，实现负载均衡
@@ -231,8 +234,11 @@ sender（读取数据发送到broker）：最多缓存5个允许5个请求同时
 默认分区策略： 
 * 如果指定的分区，则直接使用该分区进行发送
 * 如果没有指定分区，指定了key，则按key进行hash运算，得到分区进行发送
-* 如果没有指定key，则会选择粘性分区器，会随机选择一个分区，并尽可能一直使用该分区，待该分区的batch（16k一批次）已经满了，kafka再随机选择一个分区并与上次分区不同
+* 在老版本中，如果没有指定key，则会选择粘性分区器，会随机选择一个分区，并尽可能一直使用该分区，待该分区的batch（16k一批次）已经满了，kafka再随机选择一个分区并与上次分区不同
+* 在新版本中，没有指定key，默认会使用轮询策略进行消息写入
 如果没有指定分区，则会根据key进行进行hash计算如果指定了分区，则直接发送到指定分区
+
+
 ```java
 //指定key发送到相同分区
  kafkaProducer.send(new ProducerRecord<>("test-topic", "f", "hell world async" +i ),((recordMetadata, e) -> {
@@ -347,7 +353,12 @@ public class MyPartitioner implements Partitioner {
 ```
 
 
-### 发送数据的可靠性
+## 发送数据的可靠性
+**kafka只能对已提交的消息做有限度的持久化保证**
+可靠性最佳实践
+需要考虑producer、broker、comsumer三方的协调
+1. 在producer端一般是使用异步的send，必须使用带回调函数的send来确认消息发送是否成功
+2. producer端设置acks=all(表示所有副本broker都已经接收到消息，最高等级的消息提交要求)
 使用ack应答机制来保证数据可靠性
 > -1/all 所有的副本都写入成功才算写入成功，性能最差
 > 0 不等待broker确认，直接发送下一条数据，性能最高，可能存在数据丢失，不能在生产中使用
@@ -356,9 +367,14 @@ public class MyPartitioner implements Partitioner {
 > leader收到数据后，还未同步数据给follower，有一个follower出现了宕机无法与leader通信，此时这条数据是不是一定就发送失败了？
 leader通过维护动态的in-sync replica set （ISR），指和leader保持同步的follower和leader的集合（ 示例： leader： 0，isr：0，1，2）
 如果follower 长时间未向leader发送通信请求或同步数据，则该follower将被踢出ISR，时间阈值配置：
-replica.lag.time.max.ms = 30
 
-如果分区副本设置为1，或者ISR中应答的最小副本数量（min.insyc.replica默认为1）设置为1，和ack=1的效果是一样的，仍会有丢失数据的风险
+ 如果分区副本设置为1，或者ISR中应答的最小副本数量（min.insyc.replica默认为1）设置为1，和ack=1的效果是一样的，仍会有丢失数据的风险
+4. 设置producer端的retries为一个较大值，出现网络抖动导致的消息发送失败可以通过producer端的自动重试实现
+5. 设置unclean.leader.election.enable = false，控制哪些broker有资格竞选分区的leader，broker落后leader太多时不允许有选举资格
+6. 设置replication.factor >=3 保证有足够的副本冗余
+7. 设置min.insync.replicas > 1 控制消息至少被写入多少个副本才算已提交
+8. 保证reolication.factor > min.insync.replicas,保证集群可用性
+9. consumer端设置enable.auto.commmit为false，采用手动提交位移的方式
 
 数据完全可靠的条件
 * ACK的级别设置为-1/all
@@ -374,6 +390,30 @@ prop.put(ProducerConfig.ACKS_CONFIG,"0");
 prop.put(ProducerConfig.RETRIES_CONFIG,10);
 ```
 ### 发送数据的重复问题
+**kafka通过幂等性和事务来保证消息精确一次发送**
+* 幂等性保证：
+在producer端通过设置enable.idempotence参数为true来保证消息的完全
+幂等性只能保证单分区上的幂等，无法实现多分区的幂等，只能单会话幂等，不能实现跨会话的幂等
+* 事务：
+为producer端设置transsactional.id来开启事务
+```java
+producer.initTransactions();
+try {
+            producer.beginTransaction();
+            producer.send(record1);
+            producer.send(record2);
+            producer.commitTransaction();
+} catch (KafkaException e) {
+            producer.abortTransaction();
+}
+```
+consumer设置 参数isolation.level, 有两个选择：
+read_uncommitted: 默认值，读取未提交消息
+read_committed: 读取成功提交事务写入的消息
+
+事务能保证跨分区、跨会话减的幂等性，另外，事务型的producer性能会差一点
+
+
 ack = -1 情况下，可能出现数据重复问题：
 > leader接收到数据，且已经同步给follower，在应答时leader宕机，这时集群中发生重新选举，producer没有接受到应答，尝试重新发送数据，新的leader会再次同步发送的数据给follower，出现数据重复的问题
 
@@ -383,7 +423,7 @@ ack = -1 情况下，可能出现数据重复问题：
 * 最多一次 at most once： ack级别设置为0 ---可能丢数据
 * 精确一次 exactly once ： 幂等性 + 至少一次
 
-重复判断标准：具有`<PID,Partition,SeqNumber>`相同主键的消息提交时，broker只会持久化一条数据，其中PID是kafka每次重启时分配的pid，Partition是分区号，SeqNumber 是单调自增的标志
+重复判断标准：具有`<PID,Partition,SeqNumber>`相同主键的消息提交时，broker只会持久化一条数据，其中PID是kafka producer每次重启时分配的pid，Partition是分区号，SeqNumber 是单调自增的标志
 幂等性只能保证一个会话单分区内不重复
 幂等性的开启
 ```java
@@ -451,7 +491,7 @@ Kafka生产者消息重复问题通常是由于多种原因引起的，下面是
     }
 ```
 
-### 发送消息的有序性
+## 发送消息的有序性
 由于topic分区，无法保证整个topic范围内的数据有序，只能保证单分区内有序（有条件的有序）
 
 如何保证多分区有序：

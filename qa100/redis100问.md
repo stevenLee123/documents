@@ -4,6 +4,7 @@ redis学习拓扑图
 ![redis学习路线](./image/redis学习内容.jpeg)
 
 ## redis 知识点
+* redis能用来做什么（旁路缓存、分布式锁、消息队列（使用List/stream数据结构）、地理点位信息处理、解决缓存穿透、雪崩、击穿等问题、消息广播）
 * redis提供给使用者的数据结构以及redis底层使用的数据结构
 * redis中的慢操作，如何避免慢操作 
 * redis的单线程模型，为什么使用单线程模型还能很快
@@ -21,6 +22,7 @@ redis学习拓扑图
 * 使用redis设计一个分布式锁
 * redis的事务机制，redis事务和关系型数据库的事物有什么区别
 * 在切片集群中，redis的数据倾斜问题如何解决
+* redis内存碎片问题是怎么产生的，如何解决内存碎片问题（由于操作系统的内存分配策略，以及在不断的删除和新增数据时，内存中空出来的位置可能服务匹配新数据的大小，从而导致碎片，在4.0之后的版本提供了`activedefrag yes`参数来进行内存碎片清理，也可以使用`memory purge`来进行手动清理）
 
 
 ## 一个简单的键值对数据库应该有哪些模块
@@ -127,7 +129,7 @@ volatile-lfu：（Least Frequently Used算法，最不常用缓存）删除
 对所有数据范围内的淘汰策略：
 allkeys-lru： 使用LRU算法对所有数据进行删除
 allkeys-random： 随机删除
-allkeys-lfu：使用PFU算法删除
+allkeys-lfu：使用LFU算法删除
 
 ## 如何在redis中实现无锁的原子操作
   * 使用lua脚本，通过redis-cli --eval lua.script keys, args执行
@@ -1427,6 +1429,18 @@ OK
 * 高效的数据结构
 * 多路复用IO模型（非阻塞IO）
 * 事件机制
+
+## redis中内存碎片的原因，如何处理redis的内存碎片
+redis中产生内存碎片的原因有两个方面：
+1. 操作系统内存的分配策略，无法做到按需分配，操作系统一次性给redis的请求分配的内存可能比kv对需要的内存大，一次性无法使用完成，导致内存的产生
+2. 运行过程中对数据的删除、修改操作，导致产生了内存碎片
+我们可以使用info memory命令查看redis的内存使用情况，查看mem_fragmentation_ratio值，当大于1.5时，表示内存碎片比较严重
+在redis4.0RC版本中提供了`activedefrag yes`参数来设置自动清理内存碎片，又提供了两个具体设置清理内存碎片的参数：
+active-defrag-ignore-bytes 100mb 内存碎片达到100M时清理
+active-defrag-threshold-lower 10 内存碎片达到操作系统分配给redis内存的10%开始清理
+为保证redis性能，不能让内存碎片清理的操作占用redis主线程的太多时间，参数配置如下：
+active-defrag-cycle-min 25 清理碎片的时间不能低于总时间的25%
+active-defrag-cycle-max 75 清理碎片的时间不能高于75%
 
 ## redistimeseries 模块--处理时间序列数据
 
